@@ -26,7 +26,6 @@ field_rank
 With grid info we can interpolate a tensor field at any location. We can also place a point tensor source (eg scalar particle) anywhere. This particle mesh placement applies integral normalization, so the array value is scaled by 1/dV (or 1/dA). Both work via a proximity weighted average of the closest lattice points (in general up to 4 in 2d and 8 in 3d).
 
 ```@docs
-AbstractArray
 put_point_source!
 ```
 
