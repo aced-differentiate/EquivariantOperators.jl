@@ -27,10 +27,11 @@ end
 
 """
     Grid(
-    dx::AbstractFloat,
-    sz::Union{AbstractVector,Tuple};
-    origin = nothing,
-    rank_max = 1)
+        dx::AbstractFloat,
+        sz::Union{AbstractVector,Tuple};
+        origin = nothing,
+        rank_max = 1
+        )
 """
 function Grid(
     dx::AbstractFloat,
@@ -64,9 +65,9 @@ end
 function Field(; grid = nothing, rank = nothing, radfunc = nothing)
     if radfunc !== nothing
         r = radfunc.(grid.r)
-        r = concat([r])
+        r = join([r])
         return rank == 0 ? r :
-               FieldProd(0, rank, rank)(r, grid.spherical_harmonics[rank])
+               field_prod(r, grid.spherical_harmonics[rank])
     end
 
     zeros(grid.sz..., 2rank + 1)
@@ -105,11 +106,10 @@ end
 
 """
     put_point_source!(
-    field::AbstractArray,
-    grid::Grid,
-    rvec::AbstractVector,
-    val::AbstractVector,
-)
+        field::AbstractArray,
+        grid::Grid,
+        rvec::AbstractVector,
+        val::AbstractVector)
 
 
 """
@@ -133,6 +133,6 @@ function put_point_source!(f, grid, rvecs::AbstractMatrix, vals::AbstractMatrix)
 end
 
 """
-field_rank(x::AbstractArray)
+    field_rank(x::AbstractArray)
 """
 field_rank(x::AbstractArray) = (size(x)[end] - 1) ÷ 2
