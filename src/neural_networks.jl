@@ -1,100 +1,72 @@
 using Zygote
 using Random
 using Flux
+using UnPack
+
 
 include("operators.jl")
 include("diffrules.jl")
 Random.seed!(1)
 
-struct EquivLayer
-    name::Symbol
+struct EquivConv
+    in::Props
+    out::Props
     paths::AbstractVector{NamedTuple}
     pathsmap::AbstractVector
-    dims::Int
     dx::Real
     rmax::Real
-    σ::Any
-    w::AbstractVector
-    nonlinearity_params::AbstractMatrix
 end
 
-function Flux.trainable(m::EquivLayer)
-    if m.name == :conv
-        return vcat(
-            [x.op.radfunc for x in m.paths],
-            [m.nonlinearity_params],
-            [m.w],
-        )
-    elseif m.name == :prod
-        return m.w
-    end
+function Flux.trainable(m::EquivConv)
+    [x.op.radfunc.params for x in m.paths]
 end
-
+function sep(x, nranks)
+    [body]
+end
 """
-    function EquivLayer(
+    function EquivConv(
         name,
-        inranks,
-        outranks;
+        in.ranks,
+        out.ranks;
         dims = 3,
         dx = 1.0,
         rmax = 1.0,
-        rank_max = max(1, inranks..., outranks...),
+        rank_max = max(1, in.ranks..., out.ranks...),
         σ = identity
     )
 """
-function EquivLayer(
-    name,
-    inranks,
-    outranks;
+function EquivConv(
+    in_::Props,
+    out::Props,
+    rmax;
     dims = 3,
-    dx = 1.0,
-    rmax = 1.0,
-    rank_max = max(1, inranks..., outranks...),
-    σ = identity,
+    rank_max = max(1, length(in_.nranks), length(out.nranks)),
 )
     Zygote.ignore() do
         grid = Grid(dx, rmax; rank_max)
-
-        nin = length(inranks)
-        nout = length(outranks)
-        inparities = (-1) .^ inranks
-        outparities = (-1) .^ outranks
+        nin = length(in_.ranks)
+        nout = length(out.ranks)
 
         paths = []
         pathsmap = [[] for i = 1:nout]
         # iterate all tensor product paths
         # if isempty(paths)
 
-        if name == :conv
-            for lf in (rmax == 0 ? [0] : 0:rank_max)
-                for (i, li, si) in zip(1:nin, inranks, inparities)
-                    loutrange = abs(li - lf):min(li + lf, rank_max)
-                    parity = si * (-1)^lf
-                    for (o, lo) in enumerate(outranks)
-                        if lo in loutrange && outparities[o] == parity
-                            ranks = (li, lf, lo)
-                            io = (i, o)
-                            op = LinearOperator(:neural; grid, ranks, rmax)
-                            path = (; i, o, ranks, op)
-                            push!(paths, path)
-                        end
-                        # end
+        for lf in (rmax == 0 ? [0] : 0:rank_max)
+            for (i, li, si) in zip(1:nin, in_.ranks, in_.parities)
+                loutrange = abs(li - lf):min(li + lf, rank_max)
+                parity = si * (-1)^lf
+                for (o, lo) in enumerate(out.ranks)
+                    @show loutrange
+                    @show lo
+                    @show out.parities[o] == parity
+                    if (lo in loutrange) && out.parities[o] == parity
+                        ranks = (li, lf, lo)
+                        op = LinearOperator(:neural; grid, ranks, rmax)
+                        path = (; i, o, ranks, op)
+                        push!(paths, path)
                     end
-                end
-            end
-        elseif name == :prod
-            for (i1, li1, si1) in zip(1:nin, inranks, inparities)
-                for (i2, li2, si2) in
-                    zip(0:i1, [0, inranks[1:i1]...], [1, inparities[1:i1]...])
-                    loutrange = abs(li1 - li2):min(li1 + li2, rank_max)
-                    parity = si1 * si2
-                    for (o, lo) in enumerate(outranks)
-                        if lo in loutrange && outparities[o] == parity
-                            prod = FieldProd(li1, li2, lo)
-                            path = (; i1, i2, o, prod)
-                            push!(paths, path)
-                        end
-                    end
+                    # end
                 end
             end
         end
@@ -103,95 +75,102 @@ function EquivLayer(
             push!(pathsmap[path.o], i)
         end
 
-        w = ones(length(paths))
-        nonlinearity_params = ones(2, nout)
-        return EquivLayer(
-            name,
-            paths,
-            pathsmap,
-            dims,
-            dx,
-            rmax,
-            σ,
-            w,
-            nonlinearity_params,
-        )
+        return EquivConv(in_, out, paths, pathsmap, dx, rmax)
     end
 end
 
-function rescale(x, params, σ)
-    a, b = params
-    if length(x) == 1
-        return [σ.(a * x[1] .+ b) .* x[1]]
+
+"""
+"""
+function (f::EquivConv)(X::AbstractArray; remake = true)
+    @unpack in, out, paths, pathsmap, dx, rmax =f
+         pathfunc =
+            i -> paths[i].op(get(X,in,paths[i].i), in.grid)
+    if remake
+        for x in paths
+            remake!(x.op)
+        end
     end
-    # norm=field_norm(x)
-    # rescales = [[σ.(norms[i] .+ b[i]) ./ (norms[i] .+ tol)] for i in eachindex(res)]
-    # [Prod(0, field_rank(res[i]), field_rank(res[i]))(rescales[i], res[i]) for i in eachindex(res)]
+
+    res = cat(
+        [sum([pathfunc(i) for i in pathsmap[o]]) for
+        o in eachindex(pathsmap)]..., dims = 4
+    )
+
 end
-
-"""
-"""
-function (f::EquivLayer)(X::AbstractVector, grid::Grid; remake = true)
-    name, paths, pathsmap, dx, rmax, σ, w, nonlinearity_params = f.name,
-    f.paths,
-    f.pathsmap,
-    f.dx,
-    f.rmax,
-    f.σ,
-    f.w,
-    f.nonlinearity_params
-
-    if name == :conv
-        pathfunc = i -> w[i] * paths[i].op(X[paths[i].i], grid)
-        if remake
-            for x in paths
-                remake!(x.op)
+struct EquivProd
+    in::Props
+    out::Props
+    paths::AbstractVector{NamedTuple}
+    spectra::Bool
+end
+function EquivProd(
+    in::Props;
+    rank_max = max(1, length(in.ranks)),
+    spectra = false,
+)
+    Zygote.ignore() do
+        paths=[]
+        nranks_out = zeros(Int, rank_max + 1)
+        for (i1, li1, si1) in zip(1:length(in.ranks), in.ranks, in.parities)
+            for (i2, li2, si2) in
+                zip(0:i1, [0, in.ranks[1:i1]...], [1, in.parities[1:i1]...])
+                loutrange = abs(li1 - li2):min(li1 + li2, rank_max)
+                so = si1 * si2
+                for lo in loutrange
+                    prod = FieldProd(li1, li2, lo)
+                    if prod!==nothing
+                    nranks_out[lo+1] += 1
+                    path = (; i1, i2, lo, so, prod)
+                    push!(paths, path)
+                end
+                end
             end
         end
-    elseif name == :prod
-        pathfunc =
-            i ->
-                w[i] * (
-                    paths[i].i2 === 0 ? X[paths[i].i1] :
-                    paths[i].prod(X[paths[i].i1], X[paths[i].i2])
-                )
+        if spectra
+            nranks_out = (sum(nranks_out),)
+        end
+        out = Props(nranks_out, in.grid)
+        sort!( paths,by= x -> x.lo)
+        EquivProd(in, out, paths, spectra)
     end
-
-    res = [
-        sum([pathfunc(i) for i in pathsmap[o]]) for o in eachindex(pathsmap)
-    ]
-
-    if σ === identity
-        return res
-    end
-
-    # rescales = [[σ.(norms[i] .+ b[i]) ./ (norms[i] .+ tol)] for i in eachindex(res)]
-    # rescales = [[σ.(x .+ bi) ./ (x .+ tol)] for (x, bi) in zip(norms, b)]
-    # [Prod(0, field_rank(x), field_rank(x))(n, x) for (n, x) in zip(norms, res)]
-    # rescale.(res, eachcol(nonlinearity_params), σ)
 end
-# struct NormDense
-#     f::Flux.Dense
-#     # W::AbstractMatrix
-#     # b::AbstractVector
-# end
-# # Flux.trainable(m::EquivAttn) = [x.params for x in m.paths]
-#
-#
-# """
-# initialize params
-# """
-# function NormDense(n)
-#     f = Dense(n, n, swish)
-#     return NormDense(f)
-# end
-#
-# """
-# layer function
-# """
-# function (f::NormDense)(X::AbstractVector;) where {T<:AbstractFloat}
-#     W, b, σ = f.f.W, f.f.b, f.f.σ
-#     sz = Base.size(X[1][1])
-#     norms = tfnorm.(X)
-#     norms = [σ.(x) for x in (W * norms + b .* ones(sz...))]
-# end
+function (f::EquivProd)(X::AbstractArray)
+    in, out, paths, spectra = f.in, f.out, f.paths, f.spectra
+    res = [
+        path.i2 === 0 ? get( X,in,path.i1) :
+        path.prod(get( X,in,path.i1),get( X,in,path.i2)) for
+        path in paths
+    ]
+    if spectra
+        res = fieldnorm.(res)
+    end
+    cat(res..., dims = 4)
+end
+struct EquivDense
+    in::Props
+    out::Props
+    W::AbstractVector
+    b::AbstractVector
+    σ::Any
+end
+function Flux.trainable(m::EquivDense)
+    return m.W, m.b
+end
+
+function EquivDense(in, out; σ = identity)
+    Zygote.ignore() do
+        W = [ones(b,a) / a for (a, b) in zip(in.nranks, out.nranks)]
+        b = zeros(out.nranks[1])
+        EquivDense(in, out, W, b, σ)
+    end
+end
+function (f::EquivDense)(X::AbstractArray)
+    @unpack in, out, W,b, σ = f
+    res = [w * [X[:,:,:,s] for s in S] for (w, S) in zip(W, in.grouped_slices)]
+    res1 = [σ.(res[1][i].+b[i]) for i in eachindex(b)]
+    # res1 = [σ.(x.+bi) for (x,bi) in zip(res[1], b)]
+    # res[1] = res1
+    res=[res1]
+    cat(vcat(res...)..., dims = 4)
+end

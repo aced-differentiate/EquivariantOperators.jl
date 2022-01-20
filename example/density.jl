@@ -24,11 +24,11 @@ natoms = length(charges)
 # grid params
 @show dx = case.resolution
 @show origin = case.origin
-electronic_density = [case.density]
-@show sz = size(electronic_density[1])
+electronic_density = case.density
+@show sz = size(electronic_density)
 grid = Grid(dx, sz; origin)
 
-chargesum = sum(electronic_density[1]) * grid.dΩ
+chargesum = sum(electronic_density) * grid.dV
 @assert chargesum ≈ sum(charges)
 
 
@@ -47,91 +47,38 @@ put_point_source!(
 # tensor convolution params
 
 # generate data with Green's functions for Poisson's Equation, Gauss's law
-rmax = 2.0
-name = :inverse_squared_field
-field_op = LinearOperator(name; dx, dims, rmax)
-name = :potential
-potential_op = LinearOperator(name; dx, dims, rmax)
-
-# output data
-potential = potential_op(proton_density, grid)
-efield = field_op(proton_density, grid)
-# field_plot(potential)
-# plot(Array(potential(1)))
-# field_plot(field)
-
-# check
-rvec = center_charge
-# automatic interpolation at rvec
-@show potential(rvec, grid), [2 / (4π * (r))]
-# @show potential(rvec,grid) ,[1 / (4π * (.1+r)) + 1 / (4π * (r-.1))]
-@show efield(rvec, grid), zeros(3)
-# @show efield(rvec,grid) ,[1 / (4π * (.1+r)^2) + 1 / (4π * (r-.1)^2), 0, 0]
-
+rmax=1.
 rank_max = 1
-inranks = [0] # input scalar field
-outranks = [0] # output scalar field, vector field
-X = [proton_density]
-Y = [potential]
+in_ =Props((1,),grid) # input scalar field
+out =Props((1,),grid) # input scalar field
+X = cat(proton_density,dims=4)
+Y =cat( electronic_density,dims=4)
 # define tensor field convolution layer
-L = EquivLayer(:conv, inranks, outranks; dims, dx, rmax)
-y1hat = L(X, grid)[1]
+L = EquivConv(Props((1,),grid),Props((2,1),grid), rmax)
+Q = EquivProd(L.out;spectra=true)
+D1 = EquivDense(Q.out,Props((1,),grid))
 
+function normalize_density(density, total, dV)
+
+    density / (dV*sum(density) )* total
+end
+
+f0(X)=normalize_density(abs.((D1∘Q∘L)(X)),chargesum,grid.dV)
+f(X)=f0(X)-f0(zeros(grid.sz...,1))
 function loss()
-    y1hat = L(X, grid)[1]
-    l = Flux.mae(Y[1], y1hat)
-    # l = mean(sum(abs.(Y[1] - y1hat)))
-    # l +=Flux.mae(Y[2], y2hat)
-    println(l)
-    l
-end
-loss()
-ps = Flux.params(L)
-data = [()]
-opt = ADAM(0.1)
-
-for i = 1:3
-    Flux.train!(loss, ps, data, opt)
-end
-
-##
-# define tensor field convolution layer
-inranks = outranks = [0]
-midranks = [0, 1, 2]
-
-# @load "../data/density.jld", ρ
-dims = 3
-rmax = 3.0
-L = EquivLayer(:conv, inranks, midranks; dims, dx, rmax)
-Q = EquivLayer(:prod, midranks, outranks)
-
-function normalize_density(density, total, grid.dΩ)
-    density = abs.(density[1])
-    [density / sum(density) * total / grid.dΩ]
-end
-
-electronic_density_pred = 0
-function loss()
-    global electronic_density_pred = normalize_density(
-        Q(L([proton_density], grid; remake = true), grid)[1],
-        chargesum,
-        grid.dΩ,
-    )
-    l =
-        grid.dΩ *
-        sum(abs.(electronic_density_pred[1] .- electronic_density[1])) /
-        chargesum
+    Yhat= f(X)
+    l = Flux.mae(Y, Yhat)
     println(l)
     l
 end
 loss()
 
-ps = Flux.params(L, Q)
+ps = Flux.params(L,Q,D1)
 data = [()]
 opt = ADAM(0.1)
 
-for i = 1:30
+for i = 1:5
     Flux.train!(loss, ps, data, opt)
 end
 
-plot(electronic_density_pred[1])
+plot(Y[:,:,:,1])

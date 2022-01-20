@@ -23,7 +23,7 @@ struct Radfunc
     rmin::AbstractFloat
     rmax::AbstractFloat
 end
-Flux.trainable(m::Radfunc) = [m.params]
+Flux.trainable(m::Radfunc) = m.params
 # Flux.trainable(m::Radfunc) = [m.f1, m.f2, m.params]
 function Radfunc(; rmin = 0.0, rmax = 1 / tol, n = rmax == 0 ? 1 : 16)
 

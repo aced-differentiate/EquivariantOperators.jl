@@ -9,59 +9,56 @@ Random.seed!(1)
 
 # grid params
 dx = 0.1
-dim = 3
-sz = fill(11, dim) #
+sz = fill(11,3) #
 grid = Grid(dx, sz)
-@show grid.dΩ, grid.origin
+@show grid.dV, grid.origin
 
 rank = 0
-charges = Field(; grid, rank)
+charges = zeros(sz...,1)
 # @show charges.components
 
 
 # place dipole point charges 2r apart in grid as input
-r = 0.5
-pos = [r 0 0; -r 0 0]'
-vals = [1.0; 1.0]'
+pos = zeros(3)
+vals = [1.0]
 put_point_source!(charges,grid, pos, vals)
-field_plot(charges)
+# field_plot(charges)
 
 # tensor convolution params
 
 # generate data with Green's functions for Poisson's Equation, Gauss's law
 rmax = 1.0
 name = :inverse_squared_field
-field_op = LinearOperator(name; dx, dim, rmax)
+field_op = LinearOperator(name; dx, rmax)
 name = :potential
-potential_op = LinearOperator(name; dx, dim, rmax)
+potential_op = LinearOperator(name; dx, rmax)
 
 # output data
 potential = potential_op(charges,grid)
 efield = field_op(charges,grid)
-field_plot(potential)
+# field_plot(potential)
 # field_plot(field)
 
 # check
-rvec = [0.1, 0, 0]
+r=.2
+rvec = [r, 0, 0]
 # automatic interpolation at rvec
 # @assert get_tensor(rvec,potential,grid) ≈ [1 / (4π * r) - 1 / (4π * 3r)]
 # @assert get_tensor(rvec,efield,grid) ≈ [1 / (4π * r^2) - 1 / (4π * (3r)^2), 0, 0]
-@assert potential(rvec,grid) ≈ [1 / (4π * .6) + 1 / (4π * .4)]
-@assert efield(rvec,grid) ≈ [1 / (4π * .6^2) + 1 / (4π * (.4)^2), 0, 0]
+@assert get(potential,grid,rvec) ≈ [1 / (4π * r)]
+@assert get(efield,grid,rvec) ≈ [1 / (4π * r^2), 0, 0]
 
 rank_max = 1
-inranks = [0] # input scalar field
-outranks = [0, 1] # output scalar field, vector field
-X = [charges]
-Y = [potential, field]
+in_ =Props((1,),grid) # input scalar field
+out =Props((1,1),grid) # input scalar field
+X = charges
+Y = cat(potential, efield,dims=4)
 # define tensor field convolution layer
-L = EquivLayer(:conv,inranks, outranks, dim, dx, rmax)
+L = EquivConv(in_, out, rmax)
 
 function loss()
-    y1hat, y2hat = L(X,grid)
-    l1 = sum(Flux.mae.(Y[1], y1hat))
-    l2 = sum(Flux.mae.(Y[2], y2hat))
-    l = l1 + l2
+    Yhat= L(X)
+    l = Flux.mae(Y, Yhat)
     println(l)
     l
 end

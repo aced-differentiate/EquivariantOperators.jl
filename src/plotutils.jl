@@ -3,20 +3,15 @@
 using Plots
 
 function field_plot(x; title = "", kwargs...)
-    l = length(x)
-    high=maximum(maximum.(x))
-    low=minimum(minimum.(x))
+    l = size(x,4)
     plot(
         [
             plot(
-                # x[i],
-                (x[i] .- low) ./ (high-low),
+        x,
                 title = "$title\ncomponent $i",
-                # st = :heatmap,
-                # clims=[-maxval,maxval],
                 c = cgrad([:blue, :red], [0.0, 0.5, 1.0]),
                 kwargs...,
-            ) for i = 1:length(x)
+            ) for x in eachslice(x,dims=4)
         ]...,
         layout = l,
     )

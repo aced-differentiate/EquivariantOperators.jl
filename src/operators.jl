@@ -54,33 +54,32 @@ function LinearOperator(
         li = lf = lo = 1
         radfunc = r-> exp(-r^2 / (2σ^2)) / (2π)^(dims / 2)
     elseif name == :grad
-        dΩ = dx^dims
+        dV = dx^dims
         li = 0
         lf = lo = 1
         rmax = dx
         n = 1
         radfunc = r-> δn(r, dx, n, dims)
     elseif name == :div
-        dΩ = dx^dims
+        dV = dx^dims
         lf = li = 1
         lo = 0
         rmax = dx
         n = 1
         radfunc = r-> δn(r, dx, n, dims)
     elseif name == :curl
-        dΩ = dx^dims
+        dV = dx^dims
         lf = lo = li = 1
         rmax = dx
         n = 1
         radfunc = r-> -δn(r, dx, n, dims)
     elseif name == :Laplacian
-        dΩ = dx^dims
+        dV = dx^dims
         lf = li = lo = 0
         rmax = dx
         n = 2
         radfunc = r-> δn(r, dx, n, dims)
     end
-    radfunc1(r) = (rmin - tol) < r < (rmax + tol) ? radfunc(r) : 0.0
 
     if ranks === nothing
         ranks = (li, lf, lo)
@@ -89,6 +88,12 @@ function LinearOperator(
         grid = Grid(dx, rmax; dims, rank_max = ranks[2])
     end
     conv = FieldConv(ranks...)
+
+if typeof(radfunc)===Radfunc
+    radfunc1=radfunc
+else
+    radfunc1(r) = (rmin - tol) < r < (rmax + tol) ? radfunc(r) : 0.0
+end
 
     filter = Field(; radfunc=radfunc1, grid, rank = ranks[2])
      LinearOperator(ranks, rmin, rmax, radfunc1, conv, filter, grid)
@@ -105,7 +110,7 @@ function (m::LinearOperator)(x::AbstractArray, grid::Grid)
 
     ix = 0
     x_ = 0
-    dΩ = 0.0
+    dV = 0.0
     Zygote.ignore() do
         ix = [
             Int(a):Int(b + a - 1) for (a, b) in zip(m.grid.origin, grid.sz)
@@ -113,12 +118,12 @@ function (m::LinearOperator)(x::AbstractArray, grid::Grid)
         ]
         x_ = x
         # x_ = x.components
-        dΩ = m.grid.dΩ
+        dV = m.grid.dV
     end
     y_ = m.filter
 
     res = m.conv(x_, y_)
-    res[ix...,:] .* dΩ
+    res[ix...,:] .* dV
 end
 # makefilter(radfunc,grid) = Field(;radfunc, grid)
 function remake!(m)

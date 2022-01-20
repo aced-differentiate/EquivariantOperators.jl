@@ -7,14 +7,14 @@ struct Grid
     origin::Any
     spherical_harmonics::Any
     r::Any
-    dΩ::AbstractFloat
+    dV::AbstractFloat
 end
 
 """
     Grid(dx::AbstractFloat, rmax::AbstractFloat; dims = 3, rank_max = 1)
 """
 function Grid(dx::AbstractFloat, rmax::AbstractFloat; dims = 3, rank_max = 1)
-    dΩ = dx^dims
+    dV = dx^dims
 
     nrmax = round(Int, rmax / dx)
     origin = (nrmax + 1) * ones(dims)
@@ -22,7 +22,7 @@ function Grid(dx::AbstractFloat, rmax::AbstractFloat; dims = 3, rank_max = 1)
 
     r, spherical_harmonics =
         make_spherical_harmonics(dx, sz, origin, rank_max; dims)
-    Grid(dx, sz, origin, spherical_harmonics, r, dΩ)
+    Grid(dx, sz, origin, spherical_harmonics, r, dV)
 end
 
 """
@@ -40,13 +40,13 @@ function Grid(
     rank_max = 1,
 )
     dims = length(sz)
-    dΩ = dx^dims
+    dV = dx^dims
     if origin === nothing
         origin = (sz .+ 1.0) / 2
     end
     r, spherical_harmonics =
         make_spherical_harmonics(dx, sz, origin, rank_max; dims)
-    Grid(dx, sz, origin, spherical_harmonics, r, dΩ)
+    Grid(dx, sz, origin, spherical_harmonics, r, dV)
 end
 
 GRID_ALIASES = (
@@ -66,11 +66,32 @@ function Field(; grid = nothing, rank = nothing, radfunc = nothing)
     if radfunc !== nothing
         r = radfunc.(grid.r)
         r = join([r])
-        return rank == 0 ? r :
-               field_prod(r, grid.spherical_harmonics[rank])
+        return rank == 0 ? r : field_prod(r, grid.spherical_harmonics[rank])
     end
 
     zeros(grid.sz..., 2rank + 1)
+end
+
+
+struct Props
+
+    grid::Grid
+    nranks::Any
+    ranks::Any
+    parities::Any
+    slices::Any
+    grouped_slices::Any
+end
+
+function Props(nranks, grid::Grid)
+    ranks = vcat([fill(i - 1, n) for (i, n) in enumerate(nranks)]...)
+ends =cumsum(2ranks .+ 1)
+    slices =[(i==1 ? 1 : ends[i-1]+1):ends[i] for i in eachindex(ends)]
+
+    starts = [1, (1 .+ cumsum(nranks))...]
+    grouped_slices = [slices[starts[i]:starts[i+1]-1] for i = 1:length(nranks)]
+    parities = (-1) .^ ranks
+    Props(grid,nranks, ranks, parities, slices, grouped_slices)
 end
 
 """
@@ -78,11 +99,22 @@ end
 
 Makes field objects callable. Returns interpolated tensor value of the tensor field at position rvec.
 """
-function (field::AbstractArray)(rvec, grid::Grid)
+function Base.get(fields::AbstractArray, props::Props, i::Int)
+    fields[:, :, :, props.slices[i]]
+end
+
+function Base.get(field::AbstractArray, grid::Grid, rvec::AbstractVector)
     sum([
-        w * getindex.(eachslice(field, dims = length(size(field))), ix...) for
-        (ix, w) in nearest(grid.dx, grid.origin, rvec)
+        w * getindex.(eachslice(field, dims = 4), ix...) for
+        (ix, w) in nearest(grid.dx,grid.origin, rvec)
     ])
+end
+function Base.get(fields::AbstractArray, props::Props, i::Int, rvec::AbstractVector)
+    field = get(fields, props, i)
+    get(field,props.grid,rvec)
+end
+function Base.get(fields::AbstractArray, props::Props, rvec::AbstractVector)
+    get(fields, props, 1, rvec)
 end
 
 """
@@ -121,7 +153,7 @@ function put_point_source!(
 )
     for (ix, w) in nearest(grid.dx, grid.origin, rvec)
         for (c, vi) in zip(1:size(field)[end], val)
-            field[ix..., c] += w / grid.dΩ * vi
+            field[ix..., c] += w / grid.dV * vi
         end
     end
 end
