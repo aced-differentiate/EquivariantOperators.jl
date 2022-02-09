@@ -18,7 +18,7 @@ struct EquivConv
 end
 
 function Flux.trainable(m::EquivConv)
-    [x.op.radfunc.params for x in m.paths]
+    [x.op.radfunc for x in m.paths]
 end
 function sep(x, nranks)
     [body]
@@ -40,7 +40,7 @@ function EquivConv(
     out::Props,
     rmax;
     dims = 3,
-    rank_max = max(1, length(in_.nranks), length(out.nranks)),
+    rank_max = max(1, length(in_.nranks), length(out.nranks))-1,
 )
     Zygote.ignore() do
         grid = Grid(dx, rmax; rank_max)
@@ -57,9 +57,6 @@ function EquivConv(
                 loutrange = abs(li - lf):min(li + lf, rank_max)
                 parity = si * (-1)^lf
                 for (o, lo) in enumerate(out.ranks)
-                    @show loutrange
-                    @show lo
-                    @show out.parities[o] == parity
                     if (lo in loutrange) && out.parities[o] == parity
                         ranks = (li, lf, lo)
                         op = LinearOperator(:neural; grid, ranks, rmax)
@@ -83,9 +80,8 @@ end
 """
 """
 function (f::EquivConv)(X::AbstractArray; remake = true)
-    @unpack in, out, paths, pathsmap, dx, rmax =f
-         pathfunc =
-            i -> paths[i].op(get(X,in,paths[i].i), in.grid)
+    @unpack in, out, paths, pathsmap, dx, rmax = f
+    pathfunc = i -> paths[i].op(get(X, in, paths[i].i), in.grid)
     if remake
         for x in paths
             remake!(x.op)
@@ -93,11 +89,16 @@ function (f::EquivConv)(X::AbstractArray; remake = true)
     end
 
     res = cat(
-        [sum([pathfunc(i) for i in pathsmap[o]]) for
-        o in eachindex(pathsmap)]..., dims = 4
+        [
+            sum([pathfunc(i) for i in pathsmap[o]]) for
+            o in eachindex(pathsmap)
+        ]...,
+        dims = 4,
     )
 
 end
+
+
 struct EquivProd
     in::Props
     out::Props
@@ -110,7 +111,7 @@ function EquivProd(
     spectra = false,
 )
     Zygote.ignore() do
-        paths=[]
+        paths = []
         nranks_out = zeros(Int, rank_max + 1)
         for (i1, li1, si1) in zip(1:length(in.ranks), in.ranks, in.parities)
             for (i2, li2, si2) in
@@ -119,11 +120,11 @@ function EquivProd(
                 so = si1 * si2
                 for lo in loutrange
                     prod = FieldProd(li1, li2, lo)
-                    if prod!==nothing
-                    nranks_out[lo+1] += 1
-                    path = (; i1, i2, lo, so, prod)
-                    push!(paths, path)
-                end
+                    if prod !== nothing && (i1!=i2 || prod!=prod111)
+                        nranks_out[lo+1] += 1
+                        path = (; i1, i2, lo, so, prod)
+                        push!(paths, path)
+                    end
                 end
             end
         end
@@ -131,21 +132,44 @@ function EquivProd(
             nranks_out = (sum(nranks_out),)
         end
         out = Props(nranks_out, in.grid)
-        sort!( paths,by= x -> x.lo)
+        sort!(paths, by = x -> x.lo)
         EquivProd(in, out, paths, spectra)
     end
 end
 function (f::EquivProd)(X::AbstractArray)
     in, out, paths, spectra = f.in, f.out, f.paths, f.spectra
     res = [
-        path.i2 === 0 ? get( X,in,path.i1) :
-        path.prod(get( X,in,path.i1),get( X,in,path.i2)) for
+        path.i2 === 0 ? get(X, in, path.i1) :
+        path.prod(get(X, in, path.i1), get(X, in, path.i2)) for
         path in paths
     ]
     if spectra
-        res = fieldnorm.(res)
+        res = [fieldnorm(x) for x in res]
+        # res = fieldnorm.(res)
     end
     cat(res..., dims = 4)
+end
+struct LocalDense
+m::Dense
+function LocalDense(args...)
+    Random.seed!(1)
+    new(Dense(args...))
+end
+end
+function Flux.trainable(m::LocalDense)
+    return [m.m]
+    # return vcat(m.W, [m.b])
+end
+
+function (m::LocalDense)(x::AbstractArray)
+    @unpack W, b, σ = m.m
+    out,in=size(W)
+    res = σ.(cat([
+            b[i].+sum([
+                W[i,j] * x[:, :, :, j:j] for
+                j in 1:in
+            ]) for i in 1:out
+    ]...,dims=4))
 end
 struct EquivDense
     in::Props
@@ -155,22 +179,38 @@ struct EquivDense
     σ::Any
 end
 function Flux.trainable(m::EquivDense)
-    return m.W, m.b
+    return [m.W, m.b]
+    # return vcat(m.W, [m.b])
 end
 
 function EquivDense(in, out; σ = identity)
     Zygote.ignore() do
-        W = [ones(b,a) / a for (a, b) in zip(in.nranks, out.nranks)]
+        W = [ones(b, a) / a for (a, b) in zip(in.nranks, out.nranks)]
         b = zeros(out.nranks[1])
         EquivDense(in, out, W, b, σ)
     end
 end
 function (f::EquivDense)(X::AbstractArray)
-    @unpack in, out, W,b, σ = f
-    res = [w * [X[:,:,:,s] for s in S] for (w, S) in zip(W, in.grouped_slices)]
-    res1 = [σ.(res[1][i].+b[i]) for i in eachindex(b)]
+    @unpack in, out, W, b, σ = f
+    res = [
+        [
+            sum([
+                wi[j] * X[:, :, :, in.grouped_slices[a][j]] for
+                j in eachindex(in.grouped_slices[a])
+            ]) for wi in eachrow(W[a])
+        ] for a in eachindex(in.grouped_slices)
+    ]
+    # res = [w * [X[:,:,:,s] for s in S] for (w, S) in zip(W, in.grouped_slices)]
+    res1 = [σ.(res[1][i] .+ b[i]) for i in eachindex(b)]
     # res1 = [σ.(x.+bi) for (x,bi) in zip(res[1], b)]
     # res[1] = res1
-    res=[res1]
+    res = [res1]
     cat(vcat(res...)..., dims = 4)
+end
+
+function nae(yhat, y;sumy=sum(abs.(y)))
+    if sumy == 0
+        error()
+    end
+    sum(abs.(yhat .- y)) / sumy
 end

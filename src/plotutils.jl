@@ -26,3 +26,9 @@ function field_plot(x; title = "", kwargs...)
     # plots = [volume(X[i]) for i = 1:length(X)]
     # plot(plots..., layout = length(X))
 end
+
+function vis(x::EquivConv)
+    r=LinRange(0.,x.rmax,64)
+    plots = [Plots.plot(r,p.op.radfunc.(r)) for p in x.paths]
+    Plots.plot(plots..., layout = length(plots))
+end

@@ -5,6 +5,7 @@ using DSP
 
 val(x::ForwardDiff.Dual) = ForwardDiff.value(x)
 val(x::Float64) = x
+val(x::Float32) = x
 
 function dconv(x, a, b)
     size=Base.size

@@ -13,7 +13,7 @@ end
 """
     Grid(dx::AbstractFloat, rmax::AbstractFloat; dims = 3, rank_max = 1)
 """
-function Grid(dx::AbstractFloat, rmax::AbstractFloat; dims = 3, rank_max = 1)
+function Grid(dx::AbstractFloat, rmax::AbstractFloat; dims = 3, rank_max = 2)
     dV = dx^dims
 
     nrmax = round(Int, rmax / dx)

@@ -58,16 +58,16 @@ L = EquivConv(in_, out, rmax)
 
 function loss()
     Yhat= L(X)
-    l = Flux.mae(Y, Yhat)
+    l = nae(Yhat,Y)
     println(l)
     l
 end
 loss()
-
+##
 ps = Flux.params(L)
 data = [()]
 opt = ADAM(0.1)
 
-for i = 1:5
+for i = 1:30
     Flux.train!(loss, ps, data, opt)
 end

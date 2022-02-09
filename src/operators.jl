@@ -123,6 +123,7 @@ function (m::LinearOperator)(x::AbstractArray, grid::Grid)
     y_ = m.filter
 
     res = m.conv(x_, y_)
+    res* dV
     res[ix...,:] .* dV
 end
 # makefilter(radfunc,grid) = Field(;radfunc, grid)

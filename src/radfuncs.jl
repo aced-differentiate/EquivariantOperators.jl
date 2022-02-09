@@ -15,34 +15,41 @@ end
 radial function
 """
 struct Radfunc
-    # f1::Any
-    # f2::Any
-    params::AbstractVector
-    r::AbstractVector
-    dr::AbstractFloat
+    # c::AbstractVector
+    # μ::AbstractVector
+    # σ::AbstractVector
+    p::AbstractVector
+    f
     rmin::AbstractFloat
     rmax::AbstractFloat
 end
-Flux.trainable(m::Radfunc) = m.params
-# Flux.trainable(m::Radfunc) = [m.f1, m.f2, m.params]
-function Radfunc(; rmin = 0.0, rmax = 1 / tol, n = rmax == 0 ? 1 : 16)
 
-    # f1 = Dense(1, n, swish)
-    # f2 = Dense(n, 1)
-    r = LinRange(rmin, rmax, n)
-    dr = (rmax - rmin) / n
-    params = ones(n + 2)
-    Radfunc(params, r, dr, rmin, rmax)
+# Flux.trainable(m::Radfunc) = [m.p]
+Flux.trainable(m::Radfunc) = [m.f,m.p]
+# Flux.trainable(m::Radfunc) = [m.c, m.μ, m.σ]
+
+function Radfunc(; rmin = 0.0, rmax = nothing, n = 8)
+    # r = Array(LinRange(rmin, rmax, n))
+    # c = exp.(-r / rmax)
+    # μ = 1.0r
+    # σ = 1.0r.+rmax/n
+    # Radfunc(c, μ, σ, rmin, rmax)
+    p=ones(4)
+    f=Chain(Dense(1,n,leakyrelu),Dense(n,1))
+    Radfunc(p,f, rmin, rmax)
 end
 
 function (m::Radfunc)(r)
-
-    # if r ⪉m.rmin  || r ⪊ m.rmax
+    @unpack f, rmin, rmax ,p= m
+    # @unpack f, rmin, rmax = m
+    # @unpack c, μ, σ, rmin, rmax = m
     if r < m.rmin - tol || r > m.rmax + tol
         return 0.0
     end
-    c, k, C = m.params[1], abs(m.params[2]), m.params[3:end]
-    # (m.f2 ∘ m.f1)([r])[1] * (c1 * exp(-abs(k) * r) + c2 * exp(-(r / σ)^2))
-    m.rmax == 0 ? c :
-    c * exp(-k * r / m.rmax) * dot(C, exp.(-((r .- m.r) / m.dr) .^ 2))
+    # dot(c, exp.(-((r .- μ) ./ σ) .^ 2))
+    # (f([r])-f([rmax]))[1]
+    c,k=p[1:2]
+    # a=p[3:6]
+    # c*exp(-abs(k)*r)*dot(a,r.^(0:3))
+    c*exp(-abs(k)*r)*f([r])[1]
 end
