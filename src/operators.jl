@@ -1,4 +1,6 @@
 using Random
+using Functors
+
 include("field_grid.jl")
 include("radfuncs.jl")
 Random.seed!(1)
@@ -14,6 +16,7 @@ mutable struct LinearOperator
     filter::AbstractArray
     grid::Grid
 end
+@functor LinearOperator
 
 """
     function LinearOperator(
@@ -39,16 +42,17 @@ function LinearOperator(
     rmin = 0.0,
     σ = 1.0,
 )
+name=Symbol(name)
     if name == :neural
         radfunc = Radfunc(; rmin, rmax)
     elseif name == :potential
         li = lo = lf = 0
-        rmin = dx
+        rmin = 2dx
         radfunc = r-> 1 / (4π * r)
     elseif name == :inverse_squared_field
         li = 0
         lf = lo = 1
-        rmin = dx
+        rmin = 2dx
         radfunc = r-> 1 / (4π * r^2)
     elseif name == :Gaussian
         li = lf = lo = 1
@@ -103,7 +107,7 @@ end
     function (m::LinearOperator)(x::AbstractArray, grid::Grid)
 
 """
-function (m::LinearOperator)(x::AbstractArray, grid::Grid)
+function (m::LinearOperator)(x::AbstractArray)
     if m.rmax == 0
         return m.radfunc(0) * x
     end
@@ -113,7 +117,7 @@ function (m::LinearOperator)(x::AbstractArray, grid::Grid)
     dV = 0.0
     Zygote.ignore() do
         ix = [
-            Int(a):Int(b + a - 1) for (a, b) in zip(m.grid.origin, grid.sz)
+            Int(a):Int(b + a - 1) for (a, b) in zip(m.grid.origin, size(x))
             # Int(a):Int(b + a - 1) for (a, b) in zip(y.grid.origin, x.grid.sz)
         ]
         x_ = x
@@ -123,7 +127,7 @@ function (m::LinearOperator)(x::AbstractArray, grid::Grid)
     y_ = m.filter
 
     res = m.conv(x_, y_)
-    res* dV
+    # res* dV
     res[ix...,:] .* dV
 end
 # makefilter(radfunc,grid) = Field(;radfunc, grid)

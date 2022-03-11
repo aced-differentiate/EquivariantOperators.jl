@@ -1,12 +1,16 @@
 using Pkg
 # import Pkg;
 # Pkg.activate(".")
+# ]add CUDA
 
 ##
 # Pkg.add("Test")
 Pkg.add("Zygote")
+Pkg.add("BSON")
 Pkg.add("ForwardDiff")
 Pkg.add("Flux")
+Pkg.add("CUDA")
+Pkg.add("Functors")
 # Pkg.add("Rotations")
 # Pkg.add("JLD2")
 Pkg.add("Documenter")

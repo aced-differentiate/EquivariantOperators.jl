@@ -1,4 +1,4 @@
-# using Flux: conv
+using Flux: conv
 using DSP: conv
 
 # 4 = length(size(x))
@@ -17,7 +17,7 @@ prod111(x,y) =
 
 function myconv(x,y)
     DSP.conv(x,y)
-    # Flux.conv(cat(x,dims=5),cat(y,dims=5);pad=(size(y).-1)./2)
+    # Flux.conv(cat(x,dims=5),cat(y,dims=5);pad=(size(y).-1).÷2)[:,:,:,1,1]
 end
 conv0__ =
     (x, y) -> join([myconv(x[:, :, :, 1], y) for y in eachslice(y, dims = 4)])

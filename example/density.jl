@@ -1,113 +1,126 @@
 """
-We demonstrate core capabilities of EquivariantOperators.jl: particle mesh, finite differences, and machine learning. In a particle mesh context, we place 2 +1 point charges in a grid creating a scalar field. We then do a finite difference calculation of the electric field and potential. Switching gears to machine learning, we train our equivariant neural network to learn this transformation from the charge distribution (scalar field) to the electric potential (scalar field) and field (vector field), essentially learning the Green's function solution to Poisson's Equation. Finally, we treat our point charges as proton nuclei and train another neural network to predict the ground state electronic density of H2.
+We demonstrate core capabilities of EquivariantOperators.jl: particle mesh, finite differences, and machine learning. In a particle mesh context, we place 2 +1 point atoms in a grid creating a scalar field. We then do a finite difference calculation of the electric field and potential. Switching gears to machine learning, we train our equivariant neural network to learn this transformation from the charge distribution (scalar field) to the electric potential (scalar field) and field (vector field), essentially learning the Green's function solution to Poisson's Equation. Finally, we treat our point atoms as proton nuclei and train another neural network to predict the ground state electronic density of H2.
 """
 
 repo = ".."
 include("$repo/src/neural_networks.jl")
+include("$repo/src/atoms.jl")
 # include("../src/plotutils.jl")
 # include("$repo/src/EquivariantOperators.jl")
 # using .EquivariantOperators
 
 using FileIO
+using BSON: @save,@load
+using IterTools
+using Functors
+
 using Plots
 using Random
+using Optim
+using Flux, CUDA
+
 Random.seed!(1)
+# ENV["CUDA_VISIBLE_DEVICES"] = -1
+mygpu = identity
 
 # name = "AAACQNRQYWKRAR-SCLBCKFNSA-N"
 # name = "benzene"
 # name = "h2"
+# name="dsgdb9nsd_000001"
 # case = load("..\\density-prediction\\data\\$name.jld2", "cases")[1]
 
 folder = "..\\density-prediction\\data"
-name="dsgdb9nsd_000001"
-file = "$folder\\$name.jld2"
-case = load(file,"case")
+names = [split(x, ".")[1] for x in readdir(folder) if x == "h2.jld2"]
+systems = [load("$folder\\$name.jld2", "cases") for name in names]
+# file = "$folder\\$name.jld2"
+# case = load(file,"case")
 
-@unpack resolution, density, charges, positions = case
-# positions=positions'
-# case = load("..\\density-prediction\\data\\$name.jld2", "case")
-# @unpack resolution, density, core_density,charges,core_charges, positions = case
-# grid params
-origin=ones(3)
-@show dx =resolution
-sz = size(density)
-grid = Grid(dx, sz; origin)
-@unpack sz, dV = grid
+data = []
+grid=nothing
+for (cases, name) in zip(systems, names)
+    for case in cases
+        @unpack resolution,
+        density,
+        core_density,
+        charges,
+        core_charges,
+        # atoms,
+        # core_atoms,
+        positions = case
+        atoms=charges
 
-electronic_density = cat(density,dims=4)
-total = sum(charges)
-# electronic_density *=total/(sum(electronic_density*dV))
+        origin = ones(3)
+         dx = resolution
+      sz = size(density)
+global        grid = Grid(dx, sz; origin)
 
+        ρe = cat(density, dims = 4)
+        # ρe *=total/(sum(ρe*dV))
 
-proton_density = zeros(sz...,1)
-put_point_source!(
-    proton_density,
-    grid,
-    positions,
-    reshape(charges, (1, length(charges))),
-)
-@assert total ≈ sum(electronic_density)*dV≈ sum(proton_density)*dV
-# plot(proton_density(1))
+        # x = ρp |> mygpu
+        # y = ρe |> mygpu
 
-# tensor convolution params
-
-# generate data with Green's functions for Poisson's Equation, Gauss's law
-x = proton_density
-y = electronic_density
-
-rmax = 4.0
-rank_max = 2
-in_ = Props((1,), grid) # input scalar field
-# define tensor field convolution layer
-L = EquivConv(Props((1,), grid), Props((2,), grid), rmax)
-Q = EquivProd(L.out; spectra = true)
-
-n=length(Q.out.ranks)
-D = LocalDense(4n,1)
-D1 = LocalDense(n,4n,leakyrelu)
-D2 = LocalDense(2n,4n,leakyrelu)
-D3 = LocalDense(4n,1)
-
-function normalize_density(density, total)
-    # return density
-    s = sum(density)
-    if s == 0
-        return density
+        push!(data, Frame(atoms,positions,grid;ρe))
     end
-    density * total / s
 end
 
-# a=rand(length(Q.out.ranks))
-# ps = Flux.params(L, a)
-# f0(x)=abs.(sum([a[i]*Q(L(x))[:,:,:,i:i] for i=eachindex(a)]))
-ps = Flux.params(L, D1,D2,D3)
-f0(x) =abs.((D3∘D2∘D1∘Q ∘ L)(x))
-ps = Flux.params(L, D1,D)
-f0(x) =(D∘D1∘Q ∘ L)(x)
-f(x) = normalize_density(abs.(f0(x) - f0(zeros(sz..., 1))),total/dV)
+# @unpack ρp,ρe=data[1]
+# using GLMakie
+# GLMakie.inline!(false)
+# # fig = volume(fieldnorm(E)[:, :, :, 1])
+# # fig = volume(ψ[:, :, :, 1])
+# fig = volume(ρp[:, :, :, 1])
+# display(fig)
 
-sumy=sum(y)
-function loss()
-    yhat = f(x)
-    @show l = nae(yhat,y;sumy)
+##
+@unpack dx=grid
+rmax=3.
+m=DensityPredictor(dx,rmax)
+ps=Flux.params(m.L,m.D,m.D1)
+# ps=Flux.params(m)
+yhat =0
+function loss(x)
+    y=x.ρe
+    global yhat=m(x)
+    sumy = sum(y)
+    @show l = nae(yhat, y; sumy)
     l
 end
 
-@show sum(abs.(y-yhat))
-@show sum(yhat)*dV,dV*sumy
-@show minimum.([yhat,y])
-@show maximum.([yhat,y])
-yhat = f(x)
-loss()
-
-data = [()]
+data0 = data
+data = vcat([fill(x, 5) for x in data]...)
+loss(data[1])
 opt = ADAM(0.1)
 
-for i = 1:100
+for i = 1:10
     Flux.train!(loss, ps, data, opt)
 end
+@save "m.bson" m
 
-z =(Q ∘ L)(x)
+##
+@load "m.bson" m
+function fg!(F, G, x)
+    ρe_hat, ρp = predict_density(x, atoms, grid)
+    ρhat = -ρe_hat + ρp
+    @show forces_hat = calcforces(x, atoms, ρhat, grid)
+    if G != nothing
+        G .= -forces_hat
+    end
+    norm(forces_hat) / sum(atoms)
+end;
+
+x0 = positions
+
+xres = optimize(
+    Optim.only_fg!(fg!),
+    x0,
+    LBFGS(),
+    Optim.Options(show_trace = true, f_tol = tol),
+)
+xmin = Optim.minimizer(xres)
+dmin = norm(xmin[:, 1] - xmin[:, 2])
+@printf "\nOptimal bond length for Ecut=%.2f: %.3f Bohr\n" Ecut dmin
+
 ##
 using GLMakie
 include("$repo/src/plotutils.jl")
@@ -119,7 +132,7 @@ GLMakie.inline!(false)
 # fig=volume(10yhat[:, :, :, 1],algorithm = :iso,)
 # fig=volume(10y[:, :, :, 1],algorithm = :iso,)
 # fig=volume(10yhat[:, :, :, 1],algorithm = :absorption,)
-fig=volume(yhat[:, :, :, 1])
+fig = volume(yhat[:, :, :, 1])
 display(fig)
 # volume(10z[:, :, :, 3])
 

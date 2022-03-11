@@ -1,4 +1,4 @@
-using Flux
+using Flux,Functors
 const tol = 1e-18
 invr = (r; p = 1, kwargs...) -> r == 0 ? 0.0 : 1 / r^p
 
@@ -23,6 +23,7 @@ struct Radfunc
     rmin::AbstractFloat
     rmax::AbstractFloat
 end
+@functor Radfunc
 
 # Flux.trainable(m::Radfunc) = [m.p]
 Flux.trainable(m::Radfunc) = [m.f,m.p]
@@ -39,17 +40,18 @@ function Radfunc(; rmin = 0.0, rmax = nothing, n = 8)
     Radfunc(p,f, rmin, rmax)
 end
 
-function (m::Radfunc)(r)
+const T=Float64
+function (m::Radfunc)(r)::T
     @unpack f, rmin, rmax ,p= m
     # @unpack f, rmin, rmax = m
     # @unpack c, μ, σ, rmin, rmax = m
     if r < m.rmin - tol || r > m.rmax + tol
-        return 0.0
+        return convert(T,0.0)
     end
     # dot(c, exp.(-((r .- μ) ./ σ) .^ 2))
     # (f([r])-f([rmax]))[1]
     c,k=p[1:2]
     # a=p[3:6]
     # c*exp(-abs(k)*r)*dot(a,r.^(0:3))
-    c*exp(-abs(k)*r)*f([r])[1]
+    convert(T,c*exp(-abs(k)*r)*f([r])[1])
 end

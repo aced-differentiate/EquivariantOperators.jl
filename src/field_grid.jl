@@ -1,5 +1,7 @@
 include("field_operations.jl")
 include("spherical_harmonics.jl")
+using Functors
+
 
 struct Grid
     dx::AbstractFloat
@@ -9,6 +11,7 @@ struct Grid
     r::Any
     dV::AbstractFloat
 end
+@functor Grid
 
 """
     Grid(dx::AbstractFloat, rmax::AbstractFloat; dims = 3, rank_max = 1)
@@ -75,23 +78,31 @@ end
 
 struct Props
 
-    grid::Grid
     nranks::Any
     ranks::Any
     parities::Any
     slices::Any
-    grouped_slices::Any
 end
 
-function Props(nranks, grid::Grid)
-    ranks = vcat([fill(i - 1, n) for (i, n) in enumerate(nranks)]...)
-ends =cumsum(2ranks .+ 1)
-    slices =[(i==1 ? 1 : ends[i-1]+1):ends[i] for i in eachindex(ends)]
+function Props(ranks)
+    Props(; ranks)
+end
+function Props(; nranks = nothing, ranks = nothing)
+    if ranks === nothing
+        ranks = vcat([fill(i - 1, n) for (i, n) in enumerate(nranks)]...)
+    elseif nranks === nothing
+        nranks = zeros(Int, maximum(ranks) + 1)
+        for x in ranks
+            nranks[x+1] += 1
+        end
+    end
+    ends = Int.(cumsum(2 .* ranks .+ 1))
+    slices = [(i == 1 ? 1 : ends[i-1] + 1):ends[i] for i in eachindex(ends)]
 
-    starts = [1, (1 .+ cumsum(nranks))...]
-    grouped_slices = [slices[starts[i]:starts[i+1]-1] for i = 1:length(nranks)]
+    # starts = [1, (1 .+ cumsum(nranks))...]
+    # grouped_slices = [slices[starts[i]:starts[i+1]-1] for i = 1:length(nranks)]
     parities = (-1) .^ ranks
-    Props(grid,nranks, ranks, parities, slices, grouped_slices)
+    Props(nranks, ranks, parities, slices)
 end
 
 """
@@ -105,13 +116,18 @@ end
 
 function Base.get(field::AbstractArray, grid::Grid, rvec::AbstractVector)
     sum([
-        w * getindex.(eachslice(field, dims = 4), ix...) for
-        (ix, w) in nearest(grid.dx,grid.origin, rvec)
+        w * getindex.(eachslice(field, dims = 4), ix...)
+        for (ix, w) in nearest(grid.dx, grid.origin, rvec)
     ])
 end
-function Base.get(fields::AbstractArray, props::Props, i::Int, rvec::AbstractVector)
+function Base.get(
+    fields::AbstractArray,
+    props::Props,
+    i::Int,
+    rvec::AbstractVector,
+)
     field = get(fields, props, i)
-    get(field,props.grid,rvec)
+    get(field, props.grid, rvec)
 end
 function Base.get(fields::AbstractArray, props::Props, rvec::AbstractVector)
     get(fields, props, 1, rvec)
@@ -131,8 +147,8 @@ function nearest(dx, origin, rvec)
     ixfloor = floor.(Int, ix)
     er = ix - ixfloor
     [
-        (ixfloor + [x, y, z], prod(ones(3) - abs.([x, y, z] - er))) for x = 0:1,
-        y = 0:1, z = 0:1
+        (ixfloor + [x, y, z], prod(ones(3) - abs.([x, y, z] - er)))
+        for x = 0:1, y = 0:1, z = 0:1
     ]
 end
 

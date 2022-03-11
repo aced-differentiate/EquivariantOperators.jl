@@ -2,13 +2,13 @@ using Zygote
 using Random
 using Flux
 using UnPack
-
+using Functors
 
 include("operators.jl")
 include("diffrules.jl")
 Random.seed!(1)
 
-struct EquivConv
+mutable struct EquivConv
     in::Props
     out::Props
     paths::AbstractVector{NamedTuple}
@@ -16,6 +16,7 @@ struct EquivConv
     dx::Real
     rmax::Real
 end
+@functor EquivConv
 
 function Flux.trainable(m::EquivConv)
     [x.op.radfunc for x in m.paths]
@@ -38,9 +39,10 @@ end
 function EquivConv(
     in_::Props,
     out::Props,
+    dx,
     rmax;
     dims = 3,
-    rank_max = max(1, length(in_.nranks), length(out.nranks))-1,
+    rank_max = max(1, length(in_.nranks), length(out.nranks)) - 1,
 )
     Zygote.ignore() do
         grid = Grid(dx, rmax; rank_max)
@@ -80,8 +82,11 @@ end
 """
 """
 function (f::EquivConv)(X::AbstractArray; remake = true)
-    @unpack in, out, paths, pathsmap, dx, rmax = f
-    pathfunc = i -> paths[i].op(get(X, in, paths[i].i), in.grid)
+    in = out = paths = pathsmap = dx = rmax = 0
+    Zygote.ignore() do
+        @unpack in, out, paths, pathsmap, dx, rmax = f
+    end
+    pathfunc = i -> paths[i].op(get(X, in, paths[i].i))
     if remake
         for x in paths
             remake!(x.op)
@@ -90,8 +95,7 @@ function (f::EquivConv)(X::AbstractArray; remake = true)
 
     res = cat(
         [
-            sum([pathfunc(i) for i in pathsmap[o]]) for
-            o in eachindex(pathsmap)
+            sum([pathfunc(i) for i in pathsmap[o]]) for o in eachindex(pathsmap)
         ]...,
         dims = 4,
     )
@@ -120,7 +124,7 @@ function EquivProd(
                 so = si1 * si2
                 for lo in loutrange
                     prod = FieldProd(li1, li2, lo)
-                    if prod !== nothing && (i1!=i2 || prod!=prod111)
+                    if prod !== nothing && (i1 != i2 || prod != prod111)
                         nranks_out[lo+1] += 1
                         path = (; i1, i2, lo, so, prod)
                         push!(paths, path)
@@ -131,7 +135,7 @@ function EquivProd(
         if spectra
             nranks_out = (sum(nranks_out),)
         end
-        out = Props(nranks_out, in.grid)
+        out = Props(nranks_out)
         sort!(paths, by = x -> x.lo)
         EquivProd(in, out, paths, spectra)
     end
@@ -140,8 +144,8 @@ function (f::EquivProd)(X::AbstractArray)
     in, out, paths, spectra = f.in, f.out, f.paths, f.spectra
     res = [
         path.i2 === 0 ? get(X, in, path.i1) :
-        path.prod(get(X, in, path.i1), get(X, in, path.i2)) for
-        path in paths
+            path.prod(get(X, in, path.i1), get(X, in, path.i2))
+        for path in paths
     ]
     if spectra
         res = [fieldnorm(x) for x in res]
@@ -150,12 +154,14 @@ function (f::EquivProd)(X::AbstractArray)
     cat(res..., dims = 4)
 end
 struct LocalDense
-m::Dense
+    m::Dense
+end
+@functor LocalDense
 function LocalDense(args...)
     Random.seed!(1)
-    new(Dense(args...))
+    LocalDense(Dense(args...))
 end
-end
+
 function Flux.trainable(m::LocalDense)
     return [m.m]
     # return vcat(m.W, [m.b])
@@ -163,13 +169,14 @@ end
 
 function (m::LocalDense)(x::AbstractArray)
     @unpack W, b, σ = m.m
-    out,in=size(W)
-    res = σ.(cat([
-            b[i].+sum([
-                W[i,j] * x[:, :, :, j:j] for
-                j in 1:in
-            ]) for i in 1:out
-    ]...,dims=4))
+    out, in = size(W)
+    res =
+        σ.(cat(
+            [
+                b[i] .+ sum([W[i, j] * x[:, :, :, j:j] for j = 1:in]) for i = 1:out
+            ]...,
+            dims = 4,
+        ))
 end
 struct EquivDense
     in::Props
@@ -195,8 +202,8 @@ function (f::EquivDense)(X::AbstractArray)
     res = [
         [
             sum([
-                wi[j] * X[:, :, :, in.grouped_slices[a][j]] for
-                j in eachindex(in.grouped_slices[a])
+                wi[j] * X[:, :, :, in.grouped_slices[a][j]]
+                for j in eachindex(in.grouped_slices[a])
             ]) for wi in eachrow(W[a])
         ] for a in eachindex(in.grouped_slices)
     ]
@@ -208,7 +215,7 @@ function (f::EquivDense)(X::AbstractArray)
     cat(vcat(res...)..., dims = 4)
 end
 
-function nae(yhat, y;sumy=sum(abs.(y)))
+function nae(yhat, y; sumy = sum(abs.(y)))
     if sumy == 0
         error()
     end

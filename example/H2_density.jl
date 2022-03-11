@@ -36,14 +36,14 @@ chargesum = sum(electronic_density) * dV
 # place dipole point charges 2r apart in grid as input
 rank = 0
 dims = 3
-proton_density = Field(; grid, rank)
+ρp = Field(; grid, rank)
 put_point_source!(
-    proton_density,
+    ρp,
     grid,
     positions,
     reshape(charges, (1, length(charges))),
 )
-# plot(proton_density(1))
+# plot(ρp(1))
 
 # tensor convolution params
 
@@ -51,7 +51,7 @@ put_point_source!(
 rmax = 3.0
 rank_max = 1
 in_ = Props((1,), grid) # input scalar field
-x = cat(proton_density, dims = 4)
+x = cat(ρp, dims = 4)
 y = cat(electronic_density, dims = 4)
 # define tensor field convolution layer
 L = EquivConv(Props((1,), grid), Props((1,), grid), rmax)
@@ -99,10 +99,10 @@ opt = ADAM(0.1)
 for i = 1:20
     Flux.train!(loss, ps, data, opt)
 end
-ρ=electronic_density+proton_density
+ρ=electronic_density+ρp
 @show forces=calcforces(positions,charges,ρ,grid)
 electronic_density_hat=yhat = f(x)
-ρhat=electronic_density_hat+proton_density
+ρhat=electronic_density_hat+ρp
 @show forces_hat=calcforces(positions,charges,ρ_hat,grid)
 
 plot(x[:, :, :, 1])
