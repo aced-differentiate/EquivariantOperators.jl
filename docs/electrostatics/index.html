@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Operators basics, machine learning, inverse problems · EquivariantOperators.jl</title><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.039/juliamono-regular.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.13.11/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><script src="../../copy.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><a class="docs-logo" href="../"><img src="../assets/logo.png" alt="EquivariantOperators.jl logo"/></a><div class="docs-package-name"><span class="docs-autofit"><a href="../">EquivariantOperators.jl</a></span></div><form class="docs-search" action="../search/"><input class="docs-search-query" id="documenter-search-query" name="q" type="text" placeholder="Search docs"/></form><ul class="docs-menu"><li><a class="tocitem" href="../">Home</a></li><li><a class="tocitem" href="../architecture/">Architecture</a></li><li><a class="tocitem" href="../tutorials/">Tutorials</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Operators basics, machine learning, inverse problems</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Operators basics, machine learning, inverse problems</a></li></ul></nav><div class="docs-right"><a class="docs-edit-link" href="https://github.com//blob/master/docs/src/electrostatics.md" title="Edit on GitHub"><span class="docs-icon fab"></span><span class="docs-label is-hidden-touch">Edit on GitHub</span></a><a class="docs-settings-button fas fa-cog" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-sidebar-button fa fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a></div></header><article class="content" id="documenter-page"><h1 id="Operators-basics,-machine-learning,-inverse-problems"><a class="docs-heading-anchor" href="#Operators-basics,-machine-learning,-inverse-problems">Operators basics, machine learning, inverse problems</a><a id="Operators-basics,-machine-learning,-inverse-problems-1"></a><a class="docs-heading-anchor-permalink" href="#Operators-basics,-machine-learning,-inverse-problems" title="Permalink"></a></h1><pre><code class="language-julia hljs">DIR = joinpath(pwd(), &quot;../../src&quot;)
+&quot;&quot;&quot;
+Finite difference calculation &amp; machine learning of electric potential &amp; electric field from charge
+&quot;&quot;&quot;
+
+using LinearAlgebra
+using Plots
+using Random
+using Flux
+Random.seed!(1)
+include(&quot;$DIR/operators.jl&quot;)
+
+# make grid
+dims = 2
+dx = 0.1
+cell = dx * Matrix(I, dims, dims)
+rmax = 1.0
+grid = Grid(cell, rmax)
+
+# make operators
+rmin = 1e-9
+rmax = sqrt(3)
+ϕ = Op(r -&gt; 1 / (4π * r), rmin, rmax, cell)
+E = Op(r -&gt; 1 / (4π * r^2), rmin, rmax, cell; l = 1)
+▽ = Op(:▽, cell)
+
+# put dipole charges
+ρf = zeros(size(grid)..., 1)
+put!(ρf, grid, [0.5 0.0; -0.5 0.0]&#39;, [1.0 -1]&#39;&#39;)
+
+# calculate fields
+Ef = E(ρf)
+ϕf = ϕ(ρf)
+
+# test
+rvec = [0, 0]
+@show get(ϕf, grid, rvec), [0.0]
+@show get(Ef, grid, rvec), get(-▽(ϕ(ρf)), grid, rvec), [-2 / (4π * 0.5^2), 0]
+
+p = []
+push!(p, heatmap(ρf[:, :, 1]&#39;,title = &quot;dipole charge&quot;), )
+push!(p, heatmap(ϕf[:, :, 1]&#39;, title = &quot;dipole potential&quot;),)
+plot(p..., layout = length(p))
+savefig(&quot;d1.svg&quot;);
+
+# @unpack x, y=grid
+x = grid.coords[:, :, 1]
+y = grid.coords[:, :, 2]
+s = 1e-2
+u = s * Ef[:, :, 1]
+v = s * Ef[:, :, 2]
+x, y, u, v = vec.([x, y, u, v])
+quiver(x, y, quiver = (u, v), c = :blue, title = &quot;dipole electric field&quot;)
+savefig(&quot;d2.svg&quot;);
+
+##
+# make neural operators
+ϕ_ = Op(Radfunc(), rmin, rmax, cell)
+E_ = Op(Radfunc(), rmin, rmax, cell; l = 1)
+
+ps = Flux.params(ϕ_, E_)
+function loss()
+    remake!(E_)
+    remake!(ϕ_)
+    global E_f = E_(ρf)
+    global ϕ_f = ϕ_(ρf)
+    @show l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2
+    l
+end
+
+data = [()]
+loss()
+opt = ADAM(0.1)
+Flux.@epochs 50 Flux.train!(loss, ps, data, opt)
+
+## plot
+p = []
+push!(p, heatmap(ϕ_.kernel[:, :, 1], title = &quot;learned potential kernel&quot;))
+r = 0:0.01:1
+push!(
+    p,
+    plot(r, ϕ_.radfunc.(r), title = &quot;learned potential kernel radial function&quot;),
+)
+plot(p..., layout = length(p))
+savefig(&quot;ml1.svg&quot;);
+
+x = E_.grid.coords[:, :, 1]
+y = E_.grid.coords[:, :, 2]
+s = 1e-2
+u = s * E_.kernel[:, :, 1]
+v = s * E_.kernel[:, :, 2]
+x, y, u, v = vec.([x, y, u, v])
+quiver(x, y, quiver = (u, v), c = :blue, title = &quot;learned E field kernel &quot;)
+savefig(&quot;ml2.svg&quot;);</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">(get(ϕf, grid, rvec), [0.0]) = ([6.315935428978668e-17], [0.0])
+(get(Ef, grid, rvec), get(-(▽(ϕ(ρf))), grid, rvec), [-2 / ((4π) * 0.5 ^ 2), 0]) = ([-0.6366197723675809, -4.0129062673743836e-17], [-0.6631455962162306, 1.4130336505518238e-16], [-0.6366197723675814, 0.0])
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 1.359662108295491
+[ Info: Epoch 1
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 1.359662108295491
+[ Info: Epoch 2
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 1.7958328475648064
+[ Info: Epoch 3
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 1.2567461636988502
+[ Info: Epoch 4
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.7829020856403123
+[ Info: Epoch 5
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 1.0045667814551376
+[ Info: Epoch 6
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.7561379245962376
+[ Info: Epoch 7
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.5828479045990985
+[ Info: Epoch 8
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.4473006861464698
+[ Info: Epoch 9
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.7736525044408767
+[ Info: Epoch 10
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.4860272257658499
+[ Info: Epoch 11
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.9115197261212222
+[ Info: Epoch 12
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.8769399197082046
+[ Info: Epoch 13
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.5276290395720996
+[ Info: Epoch 14
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.5212223796908367
+[ Info: Epoch 15
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.6287477679421893
+[ Info: Epoch 16
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.5195900425994866
+[ Info: Epoch 17
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.4047824850063634
+[ Info: Epoch 18
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.48533472879211403
+[ Info: Epoch 19
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.49747812140953007
+[ Info: Epoch 20
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.4020198472323327
+[ Info: Epoch 21
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.38705642050171596
+[ Info: Epoch 22
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.41570868925639815
+[ Info: Epoch 23
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.2829794459083861
+[ Info: Epoch 24
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.4186094311616757
+[ Info: Epoch 25
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.35136669933176
+[ Info: Epoch 26
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.2656531255061076
+[ Info: Epoch 27
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.27465935070875513
+[ Info: Epoch 28
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.21630904696924058
+[ Info: Epoch 29
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.2518748647662491
+[ Info: Epoch 30
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.20515965201470893
+[ Info: Epoch 31
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.23598844775397626
+[ Info: Epoch 32
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.2019975405960354
+[ Info: Epoch 33
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.23955779531646987
+[ Info: Epoch 34
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.23627199803648585
+[ Info: Epoch 35
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.172371528809804
+[ Info: Epoch 36
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.22114609897950888
+[ Info: Epoch 37
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.1674260918417994
+[ Info: Epoch 38
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.25693446233115025
+[ Info: Epoch 39
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.25715766866559625
+[ Info: Epoch 40
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.14301943859412436
+[ Info: Epoch 41
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.2398023915630551
+[ Info: Epoch 42
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.23847901176496517
+[ Info: Epoch 43
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.16438479879652917
+[ Info: Epoch 44
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.2243483887218622
+[ Info: Epoch 45
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.23635408993988707
+[ Info: Epoch 46
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.15232268268935575
+[ Info: Epoch 47
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.20785553924837494
+[ Info: Epoch 48
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.23238776782207893
+[ Info: Epoch 49
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.20961002431066164
+[ Info: Epoch 50
+l = (nae(E_f, Ef) + nae(ϕ_f, ϕf)) / 2 = 0.15995206096923792</code></pre><p><img src="../d1.svg" alt/> <img src="../d2.svg" alt/> <img src="../ml1.svg" alt/> <img src="../ml2.svg" alt/></p></article><nav class="docs-footer"><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 0.27.12 on <span class="colophon-date" title="Thursday 12 May 2022 15:29">Thursday 12 May 2022</span>. Using Julia version 1.7.0-beta4.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
