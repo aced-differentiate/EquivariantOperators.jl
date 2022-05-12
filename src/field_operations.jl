@@ -1,59 +1,90 @@
-using Flux: conv
-using DSP: conv
+# using Flux: conv
+using DSP
+using LinearAlgebra
 
-# 4 = length(size(x))
-join(x) = cat(x...; dims = 4)
+prod0__(x, y) = cat(
+    [x .* y for y in eachslice(y, dims = length(size(y)))]...,
+    dims = length(size(x)),
+)
+prod_0_(x, y) = cat(
+    [x .* y for x in eachslice(x, dims = length(size(x)))]...,
+    dims = length(size(x)),
+)
+prod__0(x, y) = cat(
+    sum([
+        x .* y
+        for
+        (x, y) in zip(
+            eachslice(x, dims = length(size(x))),
+            eachslice(y, dims = length(size(y))),
+        )
+    ]),
+    dims = length(size(x)),
+)
+# prod111(x, y) = join([
+#     x[:, :, :, 2] .* y[:, :, :, 3] - x[:, :, :, 3] .* y[:, :, :, 2],
+#     x[:, :, :, 3] .* y[:, :, :, 1] - x[:, :, :, 1] .* y[:, :, :, 3],
+#     x[:, :, :, 1] .* y[:, :, :, 2] - x[:, :, :, 2] .* y[:, :, :, 1],
+# ])
 
-prod0__(x, y) = join([x .* y[:,:,:,i:i] for i in 1:size(y,4)])
-prod_0_(x, y) = join([x[:,:,:,i:i].*y for i in 1:size(x,4)])
-prod__0(x, y) =
-    join([sum([x[:, :, :, i] .* y[:, :, :, i] for i = 1:size(x, 4)])])
-prod111(x,y) =
-     join([
-    x[:, :, :, 2].*y[:, :, :, 3] - x[:, :, :, 3].* y[:, :, :, 2],
-    x[:, :, :, 3].* y[:, :, :, 1] - x[:, :, :, 1].* y[:, :, :, 3],
-    x[:, :, :, 1].* y[:, :, :, 2] - x[:, :, :, 2].* y[:, :, :, 1],
-    ])
-
-function myconv(x,y)
-    DSP.conv(x,y)
+function myconv(x, y)
+    DSP.conv(x, y)
     # Flux.conv(cat(x,dims=5),cat(y,dims=5);pad=(size(y).-1).÷2)[:,:,:,1,1]
 end
-conv0__ =
-    (x, y) -> join([myconv(x[:, :, :, 1], y) for y in eachslice(y, dims = 4)])
-conv_0_ =
-    (x, y) -> join([myconv(x, y[:, :, :, 1]) for y in eachslice(x, dims = 4)])
-conv111 =
-    (x, y) -> join([
-        myconv(x[:, :, :, 2], y[:, :, :, 3]) - myconv(x[:, :, :, 3], y[:, :, :, 2]),
-        myconv(x[:, :, :, 3], y[:, :, :, 1]) - myconv(x[:, :, :, 1], y[:, :, :, 3]),
-        myconv(x[:, :, :, 1], y[:, :, :, 2]) - myconv(x[:, :, :, 2], y[:, :, :, 1]),
-    ])
-conv__0 =
-    (x, y) -> join(sum(myconv.(eachslice(x, dims = 4), eachslice(y, dims = 4))))
-conv121 =
-    (x, y) -> join([
-        myconv(x[:, :, :, 1], -y[:, :, :, 3] / sqrt(3) .- y[:, :, :, 5]) +
-        myconv(x[:, :, :, 2], y[:, :, :, 2]) +
-        myconv(x[:, :, :, 3], y[:, :, :, 1]),
-        myconv(x[:, :, :, 1], y[:, :, :, 2]) +
-        myconv(x[:, :, :, 2], 2 / sqrt(3) * y[:, :, :, 3]) +
-        myconv(x[:, :, :, 3], y[:, :, :, 4]),
-        myconv(x[:, :, :, 1], y[:, :, :, 1]) +
-        myconv(x[:, :, :, 2], y[:, :, :, 4]) +
-        myconv(x[:, :, :, 3], -y[:, :, :, 3] / sqrt(3) .+ y[:, :, :, 5]),
-    ])
+
+function conv0__(x, y)
+    dims = length(size(y))
+    cat([myconv(dropdims(x; dims), y) for y in eachslice(y; dims)]...; dims)
+end
+
+function conv_0_(x, y)
+    dims = length(size(x))
+    cat([myconv(x, dropdims(y; dims)) for x in eachslice(x; dims)]; dims)
+end
+
+conv__0(x, y) = cat(
+    sum([
+        myconv(x, y)
+        for
+        (x, y) in zip(
+            eachslice(x, dims = length(size(x))),
+            eachslice(y, dims = length(size(y))),
+        )
+    ]),
+    dims = length(size(x)),
+)
+# conv111 =
+#     (x, y) -> join([
+#         myconv(x[:, :, :, 2], y[:, :, :, 3]) -
+#         myconv(x[:, :, :, 3], y[:, :, :, 2]),
+#         myconv(x[:, :, :, 3], y[:, :, :, 1]) -
+#         myconv(x[:, :, :, 1], y[:, :, :, 3]),
+#         myconv(x[:, :, :, 1], y[:, :, :, 2]) -
+#         myconv(x[:, :, :, 2], y[:, :, :, 1]),
+#     ])
+# conv121 =
+#     (x, y) -> join([
+#         myconv(x[:, :, :, 1], -y[:, :, :, 3] / sqrt(3) .- y[:, :, :, 5]) +
+#         myconv(x[:, :, :, 2], y[:, :, :, 2]) +
+#         myconv(x[:, :, :, 3], y[:, :, :, 1]),
+#         myconv(x[:, :, :, 1], y[:, :, :, 2]) +
+#         myconv(x[:, :, :, 2], 2 / sqrt(3) * y[:, :, :, 3]) +
+#         myconv(x[:, :, :, 3], y[:, :, :, 4]),
+#         myconv(x[:, :, :, 1], y[:, :, :, 1]) +
+#         myconv(x[:, :, :, 2], y[:, :, :, 4]) +
+#         myconv(x[:, :, :, 3], -y[:, :, :, 3] / sqrt(3) .+ y[:, :, :, 5]),
+#     ])
 
 function FieldProd(l1, l2, l)
     # l1, l2, l = ranks
     if l1 == 0
-        return  prod0__
+        return prod0__
     elseif l2 == 0
-        return  prod_0_
+        return prod_0_
     elseif l1 == l2 && l == 0
-        return  prod__0
-    elseif l1 == l2 ==l == 1
-        return  prod111
+        return prod__0
+    elseif l1 == l2 == l == 1
+        return prod111
     end
 
     # (x, y) -> yield(f(x, y), x.grid)
@@ -80,28 +111,78 @@ end
 """
     field_prod(x::AbstractArray, y::AbstractArray; rank = nothing)
 """
-function field_prod(x::AbstractArray, y::AbstractArray; rank = nothing)
-    lx, ly = field_rank.([x, y])
-    FieldProd(lx, ly, rank === nothing ? lx + ly : rank)(x, y)
+function fieldprod(x::AbstractArray, y::AbstractArray, l)
+    lx, ly = getl.([x, y])
+    FieldProd(lx, ly, l)(x, y)
 end
+function fieldprod(x::AbstractArray, y::AbstractArray)
+    lx, ly = getl.([x, y])
+    l = abs(lx - ly)
+    FieldProd(lx, ly, l)(x, y)
+end
+function getl(x)
+    n = size(x)[end]
+    if n == 1
+        return 0
+    end
 
+    dims = ndims(x) - 1
+    if dims == 2
+        return 1
+    elseif dims == 3
+        return (n - 1) ÷ 2
+    end
+
+end
+function ⊗(x,y)
+    fieldprod(x,y)
+end
+#
+# function LinearAlgebra.:⋅(x::Array{T,3}, y::Array{T,3}) where T<:AbstractFloat
+#     fieldprod(x,y,0)
+# end
+# function LinearAlgebra.:⋅(x::Array{T,4}, y::Array{T,4}) where T<:AbstractFloat
+#     fieldprod(x,y,0)
+# end
+# function ⨉(x::Array{T,4}, y::Array{T,4}) where T<:AbstractFloat
+#     fieldprod(x,y,1)
+# end
+#
+# function LinearAlgebra.adjoint(x::AbstractArray)
+#     x
+# end
 """
 """
 function field_conv(x::AbstractArray, y::AbstractArray; rank = nothing)
-    lx, ly = field_rank.([x, y])
+    lx, ly = l.([x, y])
     FieldConv(lx, ly, rank === nothing ? lx + ly : rank)(x, y)
 end
 
 """
     function field_norm(field::AbstractArray)
 """
-function fieldnorm(x::AbstractArray;squared=false)
-# sqrt.(sum([x[:,:,:,i:i] .^ 2 for i in 1:size(x,4)]))
-if  size(x,4)==1
-    return x
+function fieldnorm(x::AbstractArray)
+    # n=length(size(x))-1
+    if size(x)[end] == 1
+        return abs.(x)
+    end
+    # r=sum([x[:,:,:,i:i] .^ 2 for i in 1:size(x,4)])
+    # sqrt.(r.+.01).-.1
+    # sqrt.(sum([x .^ 2 for x in eachslice(x, dims = length(size(x)))]))
+    cat(
+        sqrt.(sum([x .^ 2 for x in eachslice(x, dims = ndims(x))])),
+        dims = ndims(x),
+    )
 end
-r=sum([x[:,:,:,i:i] .^ 2 for i in 1:size(x,4)])
-sqrt.(r.+.01).-.1
-# sqrt.(sum([x .^ 2 for x in eachslice(field,dims=4)]))
-# cat(sqrt.(sum([x .^ 2 for x in eachslice(field,dims=4)])),dims=4)
+
+function Δ(x, y)
+    sum(abs.(x .- y)) / sum(abs.(y))
+end
+
+
+function nae(yhat, y; sumy = sum(abs.(y)))
+    if sumy == 0
+        error()
+    end
+    sum(abs.(yhat .- y)) / sumy
 end

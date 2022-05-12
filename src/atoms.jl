@@ -41,16 +41,16 @@ function Flux.params(m::DensityPredictor)
     [L, D1, D]
 end
 
-function f_(x, ψ, E,L, Q, D1, D)
-    (D ∘ D1 ∘ Q)(cat(L(x), ψ, E, dims = 4))
+function f_(x, ϕ, E,L, Q, D1, D)
+    (D ∘ D1 ∘ Q)(cat(L(x), ϕ, E, dims = 4))
 end
-function (m::DensityPredictor)(x, ψ, E)
+function (m::DensityPredictor)(x, ϕ, E)
     @unpack L, Q, D1, D = m
 
     sz = size(x)
-    x0 = ψ0 = zeros(sz)
+    x0 = ϕ0 = zeros(sz)
     E0 = zeros(sz[1:3]..., 3)
-    normalize_density(abs.(f_(x, ψ, E,L, Q, D1, D) - f_(x0, ψ0, E0,L, Q, D1, D)), sum(x))
+    normalize_density(abs.(f_(x, ϕ, E,L, Q, D1, D) - f_(x0, ϕ0, E0,L, Q, D1, D)), sum(x))
 end
 
 mutable struct Frame
@@ -63,7 +63,8 @@ mutable struct Frame
     cache
     more
     function Frame(atoms, positions, grid;ρe=nothing)
-        @unpack dV, dx, sz = grid
+        @unpack cell,dv = grid
+        sz=size(grid)
         total = sum(atoms)
         ρp = zeros(sz..., 1)
         put_point_source!(
@@ -72,16 +73,16 @@ mutable struct Frame
             positions,
             reshape(atoms, (1, length(atoms))),
         )
-        @assert total ≈ sum(ρp) * dV
+        @assert total ≈ sum(ρp) * dv
 
-        rmax = dx * norm(sz)
-        rmin = 2dx
-        name = :inverse_squared_field
-        E = LinearOperator(name; dx, rmin, rmax)
-        name = :potential
-        ψ = LinearOperator(name; dx, rmin, rmax)
+        rmax = norm(cell*collect(size(grid)))/2
+        ϕ = Op(r-> r==0 ? 0. : 1/(4π*r), rmax,cell)
+        E = Op(r-> r==0 ? 0. : 1/(4π*r^2),rmax,cell;ranks=(0,1,1))
+        global ▽ = Op(:▽,cell,)
+        global d4=-▽(ϕ.kernel)
+        @show Δ(-▽(ϕ.kernel),E.kernel)
 
-        ops = (; ψ, E)
+        ops = (; ϕ, E)
         cache = ()
         more = ()
         # x = ρp |> mygpu
@@ -102,20 +103,20 @@ end
 function (m::DensityPredictor)(x::Frame)
     @unpack ρp, ops,cache = x
     if isempty(cache)
-    ψp = ops.ψ(ρp)
+    ϕp = ops.ϕ(ρp)
     Ep = ops.E(ρp)
-    x.cache=(;ψp,Ep)
+    x.cache=(;ϕp,Ep)
 else
-    @unpack ψp,Ep=cache
+    @unpack ϕp,Ep=cache
 end
-m(ρp, ψp, Ep)
-    # m.ρe=m(ρp, ψp, Ep)
+m(ρp, ϕp, Ep)
+    # m.ρe=m(ρp, ϕp, Ep)
 end
 
 function calc!(x, p)
     @unpack ρe,ρp, grid, atoms, positions, ops = x
     if p == :forces
-        # ψ=ops.ψ(ρp)
+        # ϕ=ops.ϕ(ρp)
         E = ops.E(ρe)
         F = hcat([
             atom * get(E, grid, position)

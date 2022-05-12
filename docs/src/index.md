@@ -1,25 +1,22 @@
 # Home
 
 !!! note
-    Documentation website under construction. Expected release of code base in early December 2021.
 
 ## Synopsis
 
-EquivariantOperators.jl is a Julia package implementing **equivariant machine learning**, **finite difference** operators and **particle mesh methods** on scalar, vector and tensor fields over uniform grids in 2d/3d. It's a **fully differentiable** finite differences engine that can run forwards for simulation or backwards for machine learning and inverse problems. Emphasis is on rotation equivariant operators which consequently preserve symmetry. This includes common differential operators (eg div, curl, Laplacian), Green's functions (eg inverse-square fields, Gaussians, Stokeslet), and parametrized equivariant neural operators.
+EquivariantOperators.jl implements in Julia fully differentiable finite difference operators on scalar or vector fields in 2d/3d. It can run forwards for PDE simulation or image processing, or back propagated for machine learning or inverse problems. Emphasis is on symmetry preserving rotation equivariant operators, including differential operators, common Green's functions & parametrized neural operators. Supports possibly nonuniform, nonorthogonal or periodic grids.
 
-Tensor fields are represented as multidim arrays supporting particle mesh methods of interpolation and point source placement. Operators are implemented as tensor field convolutions in real or Fourier space using rank appropriate products (eg scalar, dot, cross). For machine learning, we provide tensor convolution, product and nonlinear scaling layers for inferring equivariant mappings between arbitrary sets of tensor fields.
+## Theory
 
-## Use cases
-- Machine learning rotation equivariant and symmetry preserving behavior of dynamical systems and solutions to PDEs
-- Solving inverse problems via adjoint methods
-- Applying finite difference differential operators (eg grad, div) and Green's functions (eg inverse-square fields, Gaussians, Stokeslet) on images and vector fields
-- Particle mesh point source placement, interpolation, and Fourier space field calculations
+Equivariant linear operators are our building blocks. Equivariance means a rotation of the input results in the same rotation of the output thus preserving symmetry. Applying a linear operator convolves the input with the operator's kernel. If the operator is also equivariant, then its kernel must be radially symmetric. Differential operators and Green's functions are in fact equivariant linear operators. We provide built in constructors for these common operators. By parameterizing the radial function, we can also construct custom neural equivariant operators for machine learning.
 
-Check out our tutorials on Google Colab and our Arxiv preprint!
+## Publications
+
+- [Preprint: Paul Shen, Michael Herbst, Venkat Viswanathan. Rotation Equivariant Fourier Neural Operators for Learning Symmetry Preserving Transformations on Scalar Fields, Vector Fields, and Higher Order Tensor Fields. Arxiv. 2021.](https://arxiv.org/abs/2108.09541)
 
 ## Contributors
 
-Paul Shen (xingpins@andrew.cmu.edu), Michael Herbst (herbst@acom.rwth-aachen.de), PI: Venkat Viswanathan (venkatv@andrew.cmu.edu)
+Paul Shen (xingpins@andrew.cmu.edu), Michael Herbst (herbst@acom.rwth-aachen.de), Venkat Viswanathan (venkatv@andrew.cmu.edu)
 
 In consultation with Rachel Kurchin, Dhairya Gandhi, Chris Rackauckas
 

@@ -1,52 +1,21 @@
 # Architecture
 
-## Tensor fields over grid
+## Scalar & vector fields
 
-Tensor fields are represented as 3d/4d arrays for 2d/3d uniform Cartesian grids with the last dimension for the field component. For example, a 3d vector field would be sized XxYxZx3 and while a 2d scalar field would be XxYx1. We provide
+Scalar & vector fields in 2d/3d are represented as 3d/4d arrays with the last dimension for the field component. For example, a 3d vector field would be sized XxYxZx3 and while a 2d scalar field would be XxYx1.
 
-We store grid information including resolution, size and origin in `Grid`. By default, the origin indices are centered in the grid. Julia is 1-indexed, so the origin of a 3x3x3 grid defaults to [2, 2, 2].
+## Customizable grid
 
-```@docs
-Grid
-Field
-```
+Grid is specified by its discrete cell vectors (column-wise matrix), overall size and origin. For a uniform Cartesian 5x5x5 grid discretized at 0.1 with a centered origin, we get `cell = [0.1 0; 0 0.1]` & `origin = [3, 3, 3]`. Grid cell can in general be nonuniform & noncartesian.
 
-## Tensor field products and operations
+## Pointwise products
 
-All `Arrays` operations (eg +, -, abs) apply to fields. Local pointwise products however depend on the ranks of input fields and output field. `field_prod` infers the appropriate pointwise product (eg scalar, dot, cross, matrix vector) from the ranks. For example, locally multiplying two vector fields into a scalar field (ranks 1, 1 -> 0) involves the dot product. We also provide convenience functions for retrieving or computing the pointwise norm and rank.
-
-```@docs
-field_prod
-field_norm
-field_rank
-```
+`u ⊗ v` computes the appropriate pointwise product between 2 scalar or vector fields (inferred as scalar-scalar, scalar-vector, dot, cross). For greater clarity one may also write `u ⋅ v` for dot and `u ⨉ v` for cross
 
 ## Particle mesh placement and interpolation
 
-With grid info we can interpolate a tensor field at any location. We can also place a point tensor source (eg scalar particle) anywhere. This particle mesh placement applies integral normalization, so the array value is scaled by 1/dV (or 1/dA). Both work via a proximity weighted average of the closest lattice points (in general up to 4 in 2d and 8 in 3d).
+With grid info we can interpolate a scalar or vector field at any location. We can also place a scalar or vector point source anywhere with automatic normalization wrt discretization. Both work via a proximity weighted average of the closest grid points (in general up to 4 in 2d and 8 in 3d).
 
-```@docs
-put_point_source!
-```
+## Finite difference operators
 
-## Linear operators
-
-`LinearOperator` constructs functions for common differential operators and Green's functions. operators diverging at 0 are zeroed out within `rmin`. Any custom equivariant operator can also be made by specifying its radial function and ranks of the input output fields.
-
-Under the hood, we implement all linear operators as tensor field convolutions between the input field and the impulse response field of the operator. We compute the kernel field as a product of the radial function and the appropriate spherical harmonic tensor. The operator's kernel field has a `Grid` with `origin` centered on a lattice point. The output field's components are truncated to have same size and `Grid` as those of input.
-
-Long ranged convolutions are automatically computed in Fourier space by dependency `DSP.jl`
-
-```@docs
-LinearOperator
-```
-
-## Machine learning
-
-We can learn rotation equivariant mappings between sets of scalar, vector and tensor fields. `EquivLayer` constructs neural network layers compatible with Julia's machine learning library `Flux.jl`.
-
-...
-
-```@docs
-EquivLayer
-```
+`Op` constructs finite difference operators. Prebuilt operators like differential operators (`▽`) & common Green's functions can be specified by name. Custom equivariant operators can be made by specifying radial function.

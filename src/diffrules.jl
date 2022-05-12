@@ -26,14 +26,3 @@ end
 # @adjoint DSP.conv(a, b) = DSP.conv(a, b), x -> dconv(x, a, b)
 @adjoint DSP.conv(a, b) = DSP.conv(val.(a), val.(b)),
 x -> dconv(val.(x), val.(a), val.(b))
-# function frule(
-#     (_, ΔA, ΔB),
-#     ::typeof(DPS.conv),
-#     A,
-#     B,
-# )
-#     Ω = conv(A , B)
-#     ∂Ω = conv(ΔA * B )+ A * ΔB
-#     return (Ω, ∂Ω)
-# end
-# @show jacobian(DSP.conv, [1, 2], [3, 4])

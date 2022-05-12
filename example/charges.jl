@@ -2,9 +2,9 @@
 We map a charge distribution (scalar field) to electric potential (scalar field) and electric field (vector field).
 In fluid mechanics the equivalent mapping is from source/sink distribution to flow potential and velocity field.
 """
-dir = ".."
-include("$dir/src/neural_networks.jl")
-include("$dir/src/plotutils.jl")
+DIR = ".."
+include("$DIR/src/neural_networks.jl")
+include("$DIR/src/plotutils.jl")
 Random.seed!(1)
 
 # grid params

@@ -1,78 +1,52 @@
-include("field_operations.jl")
-include("spherical_harmonics.jl")
+include("$DIR/field_operations.jl")
 using Functors
+using UnPack
 
 
 struct Grid
-    dx::AbstractFloat
-    sz::Any
+    cell::AbstractMatrix
     origin::Any
-    spherical_harmonics::Any
-    r::Any
-    dV::AbstractFloat
+    coords::AbstractArray
+    dv::AbstractFloat
 end
 @functor Grid
 
-"""
-    Grid(dx::AbstractFloat, rmax::AbstractFloat; dims = 3, rank_max = 1)
-"""
-function Grid(dx::AbstractFloat, rmax::AbstractFloat; dims = 3, rank_max = 2)
-    dV = dx^dims
+Base.size(g::Grid)=size(g.coords)[1:end-1]
+# function Base.getproperty(g::Grid,f)
+#     @unpack coords=g
+#     if f===:x
 
-    nrmax = round(Int, rmax / dx)
-    origin = (nrmax + 1) * ones(dims)
-    sz = fill(2nrmax + 1, dims)
-
-    r, spherical_harmonics =
-        make_spherical_harmonics(dx, sz, origin, rank_max; dims)
-    Grid(dx, sz, origin, spherical_harmonics, r, dV)
-end
 
 """
     Grid(
-        dx::AbstractFloat,
-        sz::Union{AbstractVector,Tuple};
-        origin = nothing,
-        rank_max = 1
         )
 """
 function Grid(
-    dx::AbstractFloat,
+    cell::AbstractMatrix,
     sz::Union{AbstractVector,Tuple};
-    origin = nothing,
-    rank_max = 1,
+    origin = (sz .+ 1) ./ 2,
 )
-    dims = length(sz)
-    dV = dx^dims
-    if origin === nothing
-        origin = (sz .+ 1.0) / 2
+    n = size(cell, 1)
+    if n == 1
+        rvecs = [cell * ([x] .- origin) for x = 1:sz[1]]
+    elseif n == 2
+
+        rvecs = [cell * ([x, y] .- origin) for x = 1:sz[1], y = 1:sz[2]]
+    elseif n == 3
+
+        rvecs = [
+            cell * ([x, y, z] .- origin)
+            for x = 1:sz[1], y = 1:sz[2], z = 1:sz[3]
+        ]
     end
-    r, spherical_harmonics =
-        make_spherical_harmonics(dx, sz, origin, rank_max; dims)
-    Grid(dx, sz, origin, spherical_harmonics, r, dV)
+    coords = cat([getindex.(rvecs, i) for i = 1:n]..., dims = n + 1)
+    dv=det(cell)
+    Grid(cell, origin, coords,dv)
 end
 
-GRID_ALIASES = (
-    x = x -> x.spherical_harmonics[1][1],
-    y = x -> x.spherical_harmonics[1][2],
-    z = x -> x.spherical_harmonics[1][3],
-)
-
-function Base.getproperty(grid::Grid, v::Symbol)
-    v in GRID_ALIASES ? GRID_ALIASES[v](grid) : getfield(grid, v)
-end
-
-"""
-    Field(; grid = nothing, rank = nothing, radfunc = nothing)
-"""
-function Field(; grid = nothing, rank = nothing, radfunc = nothing)
-    if radfunc !== nothing
-        r = radfunc.(grid.r)
-        r = join([r])
-        return rank == 0 ? r : field_prod(r, grid.spherical_harmonics[rank])
-    end
-
-    zeros(grid.sz..., 2rank + 1)
+function Grid(cell, rmax::AbstractFloat)
+    n = size(cell, 1)
+    Grid(cell, 1 .+ 2 * ceil.(rmax * (cell \ ones(n))))
 end
 
 
@@ -116,8 +90,8 @@ end
 
 function Base.get(field::AbstractArray, grid::Grid, rvec::AbstractVector)
     sum([
-        w * getindex.(eachslice(field, dims = 4), ix...)
-        for (ix, w) in nearest(grid.dx, grid.origin, rvec)
+        w * getindex.(eachslice(field, dims = 1+length(size(grid))), ix...)
+        for (ix, w) in nearest(grid, rvec)
     ])
 end
 function Base.get(
@@ -142,14 +116,27 @@ function (field::AbstractArray)(i::Int)
     selectdim(field, dim(field), i)
 end
 
-function nearest(dx, origin, rvec)
-    ix = origin .+ rvec / dx
+function nearest(grid, rvec)
+    @unpack cell,origin=grid
+    n=length(size(grid))
+    ix = origin .+ (cell\rvec)
     ixfloor = floor.(Int, ix)
     er = ix - ixfloor
-    [
+
+    if n==2
+res=        [
+        (ixfloor + [x, y], prod(ones(n) - abs.([x, y] - er)))
+        for x = 0:1, y = 0:1
+            if [0,0] < ixfloor + [x, y] < collect(size(grid))
+                ]
+    elseif         n==3
+    res=[
         (ixfloor + [x, y, z], prod(ones(3) - abs.([x, y, z] - er)))
         for x = 0:1, y = 0:1, z = 0:1
+            if [0,0,0] < ixfloor + [x, y, z] < collect(size(grid))
     ]
+end
+res
 end
 
 """
@@ -161,22 +148,22 @@ end
 
 
 """
-function put_point_source!(
+function Base.put!(
     field::AbstractArray,
     grid::Grid,
     rvec::AbstractVector,
     val::AbstractVector,
 )
-    for (ix, w) in nearest(grid.dx, grid.origin, rvec)
+    for (ix, w) in nearest(grid, rvec)
         for (c, vi) in zip(1:size(field)[end], val)
-            field[ix..., c] += w / grid.dV * vi
+            field[ix..., c] += w / grid.dv * vi
         end
     end
 end
 
-function put_point_source!(f, grid, rvecs::AbstractMatrix, vals::AbstractMatrix)
+function Base.put!(f, grid, rvecs::AbstractMatrix, vals::AbstractMatrix)
     for (val, rvec) in zip(eachcol(vals), eachcol(rvecs))
-        put_point_source!(f, grid, rvec, val)
+        put!(f, grid, rvec, val)
     end
 end
 

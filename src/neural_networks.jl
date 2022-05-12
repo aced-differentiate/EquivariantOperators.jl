@@ -214,10 +214,3 @@ function (f::EquivDense)(X::AbstractArray)
     res = [res1]
     cat(vcat(res...)..., dims = 4)
 end
-
-function nae(yhat, y; sumy = sum(abs.(y)))
-    if sumy == 0
-        error()
-    end
-    sum(abs.(yhat .- y)) / sumy
-end

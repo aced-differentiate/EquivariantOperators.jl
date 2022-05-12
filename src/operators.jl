@@ -1,137 +1,146 @@
 using Random
 using Functors
+using Zygote
 
-include("field_grid.jl")
-include("radfuncs.jl")
+include("$DIR/field_grid.jl")
+include("$DIR/radfuncs.jl")
+include("$DIR/diffrules.jl")
 Random.seed!(1)
 
-mutable struct LinearOperator
-    ranks::Any
-    rmin::AbstractFloat
-    rmax::AbstractFloat
-
-    radfunc::Any
-    conv::Function
-
-    filter::AbstractArray
+mutable struct Op
+    l
+    kernel::AbstractArray
     grid::Grid
+    radfunc
+    rmin
+    rmax
+    type
 end
-@functor LinearOperator
+@functor Op
+Flux.trainable(m::Op) = [m.radfunc]
 
+function makekernel(radfunc, rmin, rmax, l, grid)
+    @unpack cell, coords, dv = grid
+    n = size(cell, 1)
+rnorms=0
+Zygote.ignore() do
+    rnorms = fieldnorm(coords)
+end
+    f = r-> rmin <= r <= rmax ? radfunc(r) : 0.0
+    rscalars = f.(rnorms)
+    if l == 0
+        kernel = cat(rscalars, dims = n + 1)
+    elseif l == 1
+        kernel = broadcast(
+            (a, r, s) -> (r == 0 || r > rmax) ? 0.0 : a * s / r,
+            coords,
+            repeat(rnorms, ones(Int, n)..., size(coords)[end]),
+            repeat(rscalars, ones(Int, n)..., size(coords)[end]),
+        )
+    end
+    dv * kernel
+end
 """
-    function LinearOperator(
-        name;
-        dx = nothing,
-        rmax = nothing,
-        ranks = nothing,
-        grid = nothing,
-        dims = 3,
-        radfunc = nothing,
-        rmin = 0.0,
-        σ = 1.0
+    function Op(
+
     )
 """
-function LinearOperator(
-    name;
-    dx = nothing,
-    rmax = nothing,
-    ranks = nothing,
-    grid = nothing,
-    dims = 3,
+function Op(
+    radfunc,
+    rmin::AbstractFloat,
+    rmax::AbstractFloat,
+    cell;
+    # rmin = 0.0,
+    l = 0,
+    ls = (0, 0, 0),
+    type = Nothing,
+)
+    grid = Grid(cell, rmax)
+    kernel = makekernel(radfunc, rmin, rmax, l, grid)
+
+    Op(l, kernel, grid, radfunc,rmin, rmax, type)
+end
+
+function Op(
+    name::Union{Symbol,String},
+    cell;
+    rmin = -1e-16,
+    rmax = Inf,
     radfunc = nothing,
-    rmin = 0.0,
+    l = 0,
+    ls = (0, 0, 0),
     σ = 1.0,
 )
-name=Symbol(name)
+    name = Symbol(name)
+    if name == :▽
+        name = :grad
+    end
+
+    n = size(cell, 1)
+    type = Nothing
     if name == :neural
-        radfunc = Radfunc(; rmin, rmax)
-    elseif name == :potential
-        li = lo = lf = 0
-        rmin = 2dx
-        radfunc = r-> 1 / (4π * r)
-    elseif name == :inverse_squared_field
-        li = 0
-        lf = lo = 1
-        rmin = 2dx
-        radfunc = r-> 1 / (4π * r^2)
     elseif name == :Gaussian
-        li = lf = lo = 1
-        radfunc = r-> exp(-r^2 / (2σ^2)) / (2π)^(dims / 2)
+        radfunc = r -> exp(-r^2 / (2 * σ^2)) / sqrt(2π * σ^(2n))
+        return Op(radfunc, rmin,3σ, cell)
     elseif name == :grad
-        dV = dx^dims
-        li = 0
-        lf = lo = 1
-        rmax = dx
-        n = 1
-        radfunc = r-> δn(r, dx, n, dims)
-    elseif name == :div
-        dV = dx^dims
-        lf = li = 1
-        lo = 0
-        rmax = dx
-        n = 1
-        radfunc = r-> δn(r, dx, n, dims)
-    elseif name == :curl
-        dV = dx^dims
-        lf = lo = li = 1
-        rmax = dx
-        n = 1
-        radfunc = r-> -δn(r, dx, n, dims)
-    elseif name == :Laplacian
-        dV = dx^dims
-        lf = li = lo = 0
-        rmax = dx
-        n = 2
-        radfunc = r-> δn(r, dx, n, dims)
-    end
+        type = :diff
+        l = 1
+        grid = Grid(cell, fill(3, n))
 
-    if ranks === nothing
-        ranks = (li, lf, lo)
+        if n == 1
+            kernel = [1 / (2 * cell[1]), 0, -1 / (2 * cell[1])]
+        elseif n == 2
+            kernel = [
+                sum(abs.([x, y])) > 1 ? zeros(2) : -cell' \ [x, y] / 2
+                for x = -1:1, y = -1:1
+            ]
+            kernel = cat([getindex.(kernel, i) for i = 1:n]..., dims = n + 1)
+        elseif n == 3
+            kernel = [
+                sum(abs.([x, y, z])) > 1 ? zeros(3) :
+                    -cell' \ [x, y, z] / 2 for x = -1:1, y = -1:1, z = -1:1
+            ]
+            kernel = cat([getindex.(kernel, i) for i = 1:n]..., dims = n + 1)
+        end
     end
-    if grid === nothing
-        grid = Grid(dx, rmax; dims, rank_max = ranks[2])
-    end
-    conv = FieldConv(ranks...)
-
-if typeof(radfunc)===Radfunc
-    radfunc1=radfunc
-else
-    radfunc1(r) = (rmin - tol) < r < (rmax + tol) ? radfunc(r) : 0.0
-end
-
-    filter = Field(; radfunc=radfunc1, grid, rank = ranks[2])
-     LinearOperator(ranks, rmin, rmax, radfunc1, conv, filter, grid)
+    Op(l, kernel, grid, radfunc,rmin, rmax, type)
 end
 
 """
-    function (m::LinearOperator)(x::AbstractArray, grid::Grid)
+    function (m::Op)(x::AbstractArray, )
 
 """
-function (m::LinearOperator)(x::AbstractArray)
-    if m.rmax == 0
-        return m.radfunc(0) * x
-    end
+function (m::Op)(x::AbstractArray)
+    li = 0
+    lo = m.l
+    m(x, li, lo)
+end
 
+function (m::Op)(x::AbstractArray, li, lo)
+    @unpack grid, kernel, l, type = m
+    @unpack origin, cell = grid
     ix = 0
-    x_ = 0
-    dV = 0.0
     Zygote.ignore() do
-        ix = [
-            Int(a):Int(b + a - 1) for (a, b) in zip(m.grid.origin, size(x))
-            # Int(a):Int(b + a - 1) for (a, b) in zip(y.grid.origin, x.grid.sz)
-        ]
-        x_ = x
-        # x_ = x.components
-        dV = m.grid.dV
+        if type == :diff
+            ix = [
+                Int.([a + 1, ((a+1):(b+a-2))..., b + a - 2])
+                for (a, b) in zip(origin, size(x))
+            ]
+        else
+            ix = [Int(a):Int(b + a - 1) for (a, b) in zip(origin, size(x))]
+        end
     end
-    y_ = m.filter
 
-    res = m.conv(x_, y_)
-    # res* dV
-    res[ix...,:] .* dV
+    FieldConv(li, l, lo)(x, kernel)[ix..., :]
 end
-# makefilter(radfunc,grid) = Field(;radfunc, grid)
+
+function LinearAlgebra.:⋅(m::Op, x)
+    m(x, m.l, 0)
+end
+function ⨉(m::Op, x)
+    m(x, 1, 1)
+end
 function remake!(m)
-    rank, radfunc, grid = field_rank(m.filter), m.radfunc, m.grid
-    m.filter = Field(; rank, radfunc, grid)
+    @unpack radfunc,rmin, rmax, l, grid = m
+    m.kernel = makekernel(radfunc,rmin, rmax, l, grid)
 end
