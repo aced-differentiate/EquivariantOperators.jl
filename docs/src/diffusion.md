@@ -1,7 +1,7 @@
 # PDE simulation, machine learning
 
 ```@example 1
-DIR=joinpath(pwd(),"../../src")
+DIR=joinpath(pwd(),"../../src") # change this to your EquivariantOperators.jl directory
 """
 simulation & machine learning of diffusion advection PDE
 """

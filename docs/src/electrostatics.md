@@ -1,7 +1,7 @@
 # Operators basics, machine learning, inverse problems
 
 ```@example 1
-DIR = joinpath(pwd(), "../../src")
+DIR = joinpath(pwd(), "../../src") # change this to your EquivariantOperators.jl directory
 """
 Finite difference calculation & machine learning of electric potential & electric field from charge
 """
