@@ -109,7 +109,11 @@ function FieldConv(l1, l2, l)
 end
 
 """
-    field_prod(x::AbstractArray, y::AbstractArray; rank = nothing)
+    ⊗(x,y)
+    fieldprod(x::AbstractArray, y::AbstractArray)
+    fieldprod(x::AbstractArray, y::AbstractArray,l)
+
+    Alias of fieldprod(u, v), `u ⊗ v` computes the appropriate pointwise product between 2 scalar or vector fields (inferred as scalar-scalar, scalar-vector, dot, cross). For greater clarity one may also write `u ⋅ v` for dot and `u ⨉ v` for cross
 """
 function fieldprod(x::AbstractArray, y::AbstractArray, l)
     lx, ly = getl.([x, y])

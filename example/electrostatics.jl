@@ -1,4 +1,3 @@
-DIR = joinpath(pwd(), "src") # change this to your EquivariantOperators.jl directory
 """
 Finite difference calculation & machine learning of electric potential & electric field from charge
 """
@@ -8,7 +7,7 @@ using Plots
 using Random
 using Flux
 Random.seed!(1)
-include("$DIR/operators.jl")
+using Main.EquivariantOperators # end users should omit Main.
 
 # make grid
 dims = 2

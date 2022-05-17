@@ -1,4 +1,4 @@
-include("$DIR/field_operations.jl")
+include("field_operations.jl")
 using Functors
 using UnPack
 
@@ -18,8 +18,14 @@ Base.size(g::Grid)=size(g.coords)[1:end-1]
 
 
 """
+    Grid(cell, rmax::AbstractFloat)
     Grid(
+        cell::AbstractMatrix,
+        sz::Union{AbstractVector,Tuple};
+        origin = (sz .+ 1) ./ 2,
         )
+
+Grid is specified by its discrete cell vectors (column-wise matrix), overall size and origin. For a uniform Cartesian 5x5x5 grid discretized at 0.1 with a centered origin, we get `cell = [0.1 0; 0 0.1]` & `origin = [3, 3, 3]`. Grid cell can in general be nonuniform & noncartesian.
 """
 function Grid(
     cell::AbstractMatrix,
@@ -88,6 +94,17 @@ function Base.get(fields::AbstractArray, props::Props, i::Int)
     fields[:, :, :, props.slices[i]]
 end
 
+"""
+    Base.get(field::AbstractArray, grid::Grid, rvec::AbstractVector)
+    Base.put!(
+        field::AbstractArray,
+        grid::Grid,
+        rvec::AbstractVector,
+        val::AbstractVector,
+    )
+
+With grid info we can interpolate a scalar or vector field at any location. We can also place a scalar or vector point source anywhere with automatic normalization wrt discretization. Both work via a proximity weighted average of the closest grid points (in general up to 4 in 2d and 8 in 3d).
+"""
 function Base.get(field::AbstractArray, grid::Grid, rvec::AbstractVector)
     sum([
         w * getindex.(eachslice(field, dims = 1+length(size(grid))), ix...)
@@ -107,14 +124,6 @@ function Base.get(fields::AbstractArray, props::Props, rvec::AbstractVector)
     get(fields, props, 1, rvec)
 end
 
-"""
-    (field::AbstractArray)(i::Int)
-
-Makes field objects callable. Returns ith component array (2d/3d) of tensor field.
-"""
-function (field::AbstractArray)(i::Int)
-    selectdim(field, dim(field), i)
-end
 
 function nearest(grid, rvec)
     @unpack cell,origin=grid
@@ -139,15 +148,6 @@ end
 res
 end
 
-"""
-    put_point_source!(
-        field::AbstractArray,
-        grid::Grid,
-        rvec::AbstractVector,
-        val::AbstractVector)
-
-
-"""
 function Base.put!(
     field::AbstractArray,
     grid::Grid,

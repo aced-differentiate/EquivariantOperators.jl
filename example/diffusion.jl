@@ -1,14 +1,15 @@
-DIR = joinpath(pwd(), "src") # change this to your EquivariantOperators.jl directory
 """
 simulation & machine learning of diffusion advection PDE
 """
+
 using IterTools
 using Plots
 using Random
 using Flux
 using LinearAlgebra
 Random.seed!(1)
-include("$DIR/operators.jl")
+using Main.EquivariantOperators # end users should omit Main.
+
 
 # make grid
 n = 2

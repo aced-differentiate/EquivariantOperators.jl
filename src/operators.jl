@@ -2,9 +2,9 @@ using Random
 using Functors
 using Zygote
 
-include("$DIR/field_grid.jl")
-include("$DIR/radfuncs.jl")
-include("$DIR/diffrules.jl")
+include("grid.jl")
+include("radfuncs.jl")
+include("diffrules.jl")
 Random.seed!(1)
 
 mutable struct Op
@@ -14,7 +14,7 @@ mutable struct Op
     radfunc
     rmin
     rmax
-    type
+    boundary
 end
 @functor Op
 Flux.trainable(m::Op) = [m.radfunc]
@@ -40,35 +40,48 @@ end
     end
     dv * kernel
 end
-"""
-    function Op(
-
-    )
-"""
 function Op(
     radfunc,
-    rmin::AbstractFloat,
-    rmax::AbstractFloat,
-    cell;
-    # rmin = 0.0,
+    rmin,
+    rmax,
+    cell::Matrix;
     l = 0,
-    ls = (0, 0, 0),
-    type = Nothing,
+    boundary =:zero,
 )
     grid = Grid(cell, rmax)
     kernel = makekernel(radfunc, rmin, rmax, l, grid)
 
-    Op(l, kernel, grid, radfunc,rmin, rmax, type)
+    Op(l, kernel, grid, radfunc,rmin, rmax, boundary)
 end
 
+"""
+    Op(
+        name::Union{Symbol,String},
+        cell;
+        boundary =:zero,
+        rmin = 0,
+        rmax = Inf,
+        l = 0,
+        σ = 1.0,
+    )
+    Op(
+        radfunc,
+        rmin::AbstractFloat,
+        rmax::AbstractFloat,
+        cell;
+        l = 0,
+        boundary =:zero,
+    )
+
+`Op` constructs finite difference operators. Prebuilt operators like differential operators (`▽`) & common Green's functions can be specified by name. Custom equivariant operators can be made by specifying radial function.
+"""
 function Op(
     name::Union{Symbol,String},
     cell;
-    rmin = -1e-16,
+    rmin = 0.,
     rmax = Inf,
-    radfunc = nothing,
+    boundary =:zero,
     l = 0,
-    ls = (0, 0, 0),
     σ = 1.0,
 )
     name = Symbol(name)
@@ -77,13 +90,13 @@ function Op(
     end
 
     n = size(cell, 1)
-    type = Nothing
+    radfunc=nothing
     if name == :neural
     elseif name == :Gaussian
         radfunc = r -> exp(-r^2 / (2 * σ^2)) / sqrt(2π * σ^(2n))
         return Op(radfunc, rmin,3σ, cell)
     elseif name == :grad
-        type = :diff
+        boundary = :smooth
         l = 1
         grid = Grid(cell, fill(3, n))
 
@@ -103,7 +116,7 @@ function Op(
             kernel = cat([getindex.(kernel, i) for i = 1:n]..., dims = n + 1)
         end
     end
-    Op(l, kernel, grid, radfunc,rmin, rmax, type)
+    Op(l, kernel, grid, radfunc,rmin, rmax, boundary)
 end
 
 """
@@ -117,11 +130,11 @@ function (m::Op)(x::AbstractArray)
 end
 
 function (m::Op)(x::AbstractArray, li, lo)
-    @unpack grid, kernel, l, type = m
+    @unpack grid, kernel, l, boundary = m
     @unpack origin, cell = grid
     ix = 0
     Zygote.ignore() do
-        if type == :diff
+        if boundary == :smooth
             ix = [
                 Int.([a + 1, ((a+1):(b+a-2))..., b + a - 2])
                 for (a, b) in zip(origin, size(x))

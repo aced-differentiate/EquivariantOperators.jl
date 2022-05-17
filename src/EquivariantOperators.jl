@@ -1,8 +1,8 @@
 module EquivariantOperators
 
-include("./neural_networks.jl")
-export Grid, put_point_source!, field, field_rank, field_norm
-export FieldProd, field_prod, FieldConv, field_conv
-export EquivLayer, LinearOperator
+include("operators.jl")
+export Grid, get,put!, fieldnorm
+export FieldProd, fieldprod, FieldConv, fieldconv,⊗,⋅,⨉
+export Op,Radfunc,remake!,nae
 #
 end # module
