@@ -1,4 +1,4 @@
-name = "EquivariantOperators"
+name = "EquivariantOperators.jl"
 uuid = "e0aa4542-b1ed-4e6a-a09e-9c4627a9da65"
 authors = ["Paul Shen <pxshen@alumni.stanford.edu>"]
 version = "0.1.0"
@@ -10,3 +10,12 @@ ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 Functors = "d9f16b24-f501-4c13-a1f2-28368ffc5196"
 UnPack = "3a884ed6-31ef-47d7-9d2a-63182c4928ed"
 Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
+
+[compat]
+julia = "1.7"        # [3.0.0, ∞), no upper bound (bad)
+DSP = "0.7.5"
+Flux = "0.13.1"
+ForwardDiff = "0.10.29"
+Functors = "0.2.8"
+UnPack = "1.0.2"
+Zygote = "0.6.40"
