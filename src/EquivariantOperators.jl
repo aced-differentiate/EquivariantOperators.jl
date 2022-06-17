@@ -1,8 +1,10 @@
 module EquivariantOperators
 
 include("operators.jl")
-export Grid, get,put!, fieldnorm
-export FieldProd, fieldprod, FieldConv, fieldconv,⊗,⋅,⨉
+include("plotutils.jl")
+export Grid, get,put!
+export xcor,conv
 export Op,Radfunc,remake!,nae
+export vfplot
 #
 end # module

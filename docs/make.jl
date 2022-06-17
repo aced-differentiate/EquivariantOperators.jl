@@ -8,6 +8,6 @@ using Documenter
 ##
 makedocs(
     sitename = "EquivariantOperators.jl",
-    pages = ["index.md","architecture.md", "tutorials.md"],
+    pages = ["index.md","guide.md",],
     # pages = ["index.md", "architecture.md", "publications.md", "tutorials.md"],
 )

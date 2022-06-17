@@ -6,15 +6,25 @@ using UnPack
 struct Grid
     cell::AbstractMatrix
     origin::Any
-    coords::AbstractArray
+    r::AbstractArray
+    rhat::AbstractArray
+    R::AbstractArray
     dv::AbstractFloat
 end
 @functor Grid
 
-Base.size(g::Grid)=size(g.coords)[1:end-1]
-# function Base.getproperty(g::Grid,f)
-#     @unpack coords=g
-#     if f===:x
+Base.size(g::Grid) = size(g.r)
+function Base.getproperty(g::Grid, f::Symbol)
+    if f === :x
+        return getindex.(g.r, 1)
+    elseif f === :y
+        return getindex.(g.r, 2)
+    elseif f === :z
+        return getindex.(g.r, 3)
+    end
+    getfield(g, f)
+end
+
 
 
 """
@@ -25,7 +35,7 @@ Base.size(g::Grid)=size(g.coords)[1:end-1]
         origin = (sz .+ 1) ./ 2,
         )
 
-Grid is specified by its discrete cell vectors (column-wise matrix), overall size and origin. For a uniform Cartesian 5x5x5 grid discretized at 0.1 with a centered origin, we get `cell = [0.1 0; 0 0.1]` & `origin = [3, 3, 3]`. Grid cell can in general be nonuniform & noncartesian.
+Grid is specified by its discrete cell vectors (column-wise matrix), overall size and origin. For a uniform Cartesian 5x5 grid discretized at 0.1 with a centered origin, we get `cell = [0.1 0; 0 0.1]` & `origin = [3, 3]`. Grid cell can in general be noncartesian.
 """
 function Grid(
     cell::AbstractMatrix,
@@ -45,9 +55,10 @@ function Grid(
             for x = 1:sz[1], y = 1:sz[2], z = 1:sz[3]
         ]
     end
-    coords = cat([getindex.(rvecs, i) for i = 1:n]..., dims = n + 1)
-    dv=det(cell)
-    Grid(cell, origin, coords,dv)
+    R = norm.(rvecs)
+    rhat = rvecs ./ (R .+ 1e-16)
+    dv = det(cell)
+    Grid(cell, origin, rvecs, rhat, R, dv)
 end
 
 function Grid(cell, rmax::AbstractFloat)
@@ -106,10 +117,7 @@ end
 With grid info we can interpolate a scalar or vector field at any location. We can also place a scalar or vector point source anywhere with automatic normalization wrt discretization. Both work via a proximity weighted average of the closest grid points (in general up to 4 in 2d and 8 in 3d).
 """
 function Base.get(field::AbstractArray, grid::Grid, rvec::AbstractVector)
-    sum([
-        w * getindex.(eachslice(field, dims = 1+length(size(grid))), ix...)
-        for (ix, w) in nearest(grid, rvec)
-    ])
+    sum([w * field[ix...] for (ix, w) in nearest(grid, rvec)])
 end
 function Base.get(
     fields::AbstractArray,
@@ -126,38 +134,33 @@ end
 
 
 function nearest(grid, rvec)
-    @unpack cell,origin=grid
-    n=length(size(grid))
-    ix = origin .+ (cell\rvec)
+    @unpack cell, origin = grid
+    n = length(size(grid))
+    ix = origin .+ (cell \ rvec)
     ixfloor = floor.(Int, ix)
     er = ix - ixfloor
 
-    if n==2
-res=        [
-        (ixfloor + [x, y], prod(ones(n) - abs.([x, y] - er)))
-        for x = 0:1, y = 0:1
-            if [0,0] < ixfloor + [x, y] < collect(size(grid))
-                ]
-    elseif         n==3
-    res=[
-        (ixfloor + [x, y, z], prod(ones(3) - abs.([x, y, z] - er)))
-        for x = 0:1, y = 0:1, z = 0:1
-            if [0,0,0] < ixfloor + [x, y, z] < collect(size(grid))
-    ]
-end
-res
+    if n == 2
+        res = [
+            (ixfloor + [x, y], prod(ones(n) - abs.([x, y] - er)))
+            for
+            x = 0:1, y = 0:1 if [0, 0] < ixfloor + [x, y] < collect(size(grid))
+        ]
+    elseif n == 3
+        res = [
+            (ixfloor + [x, y, z], prod(ones(3) - abs.([x, y, z] - er)))
+            for
+            x = 0:1,
+            y = 0:1,
+            z = 0:1 if [0, 0, 0] < ixfloor + [x, y, z] < collect(size(grid))
+        ]
+    end
+    res
 end
 
-function Base.put!(
-    field::AbstractArray,
-    grid::Grid,
-    rvec::AbstractVector,
-    val::AbstractVector,
-)
+function Base.put!(field::AbstractArray, grid::Grid, rvec::AbstractVector, val)
     for (ix, w) in nearest(grid, rvec)
-        for (c, vi) in zip(1:size(field)[end], val)
-            field[ix..., c] += w / grid.dv * vi
-        end
+        field[ix...] += w / grid.dv * val
     end
 end
 
@@ -166,8 +169,3 @@ function Base.put!(f, grid, rvecs::AbstractMatrix, vals::AbstractMatrix)
         put!(f, grid, rvec, val)
     end
 end
-
-"""
-    field_rank(x::AbstractArray)
-"""
-field_rank(x::AbstractArray) = (size(x)[end] - 1) ÷ 2

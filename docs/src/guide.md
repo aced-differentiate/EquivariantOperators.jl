@@ -2,18 +2,12 @@
 
 ## Scalar & vector fields
 
-Scalar & vector fields in 2d/3d are represented as 3d/4d arrays with the last dimension for the field component. For example, a 3d vector field would be sized XxYxZx3 and while a 2d scalar field would be XxYx1.
+Scalar & vector fields are represented as 2d/3d arrays of canonically scalars or vectors. Array values can alternatively be any type that Supports addition & multiplication.
 
 ## Customizable grid
 
 ```@docs
 Grid
-```
-
-## Pointwise products
-
-```@docs
-fieldprod
 ```
 
 ## Particle mesh placement and interpolation
