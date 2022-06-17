@@ -3,8 +3,8 @@ using Functors
 using Zygote
 
 include("grid.jl")
+include("conv.jl")
 include("radfuncs.jl")
-include("diffrules.jl")
 Random.seed!(1)
 
 mutable struct Op
@@ -126,4 +126,13 @@ end
 function remake!(m)
     @unpack radfunc,rmin, rmax,  grid,l = m
     m.kernel = makekernel(radfunc,rmin, rmax, l, grid)
+end
+function Base.abs(x::AbstractArray  )
+    sum(abs.(x))
+end
+function nae(yhat, y; sumy = sum(abs.(y)))
+    if sumy == 0
+        error()
+    end
+    sum(abs.(yhat .- y)) / sumy
 end

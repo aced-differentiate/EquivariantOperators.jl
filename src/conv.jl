@@ -1,5 +1,4 @@
 # using Flux: conv
-using DSP
 using LinearAlgebra
 function FieldProd(l1, l2, l)
     # l1, l2, l = ranks
@@ -66,14 +65,4 @@ function conv(x, f; product = *, boundary = :extend)
 end
 function Δ(x, y)
     sum(abs.(x .- y)) / sum(abs.(y))
-end
-
-function Base.abs(x::AbstractArray  )
-    sum(abs.(x))
-end
-function nae(yhat, y; sumy = sum(abs.(y)))
-    if sumy == 0
-        error()
-    end
-    sum(abs.(yhat .- y)) / sumy
 end

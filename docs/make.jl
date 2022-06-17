@@ -1,7 +1,7 @@
 using Documenter
 
-# include("../src/EquivariantOperators.jl")
-# using .EquivariantOperators
+include("../src/EquivariantOperators.jl")
+using .EquivariantOperators
 
 # include("../src/operators.jl")
 

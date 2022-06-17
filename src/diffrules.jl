@@ -1,7 +1,6 @@
 using Zygote: @adjoint
 using Zygote
 using ForwardDiff
-using DSP
 
 val(x::ForwardDiff.Dual) = ForwardDiff.value(x)
 val(x::Float64) = x
