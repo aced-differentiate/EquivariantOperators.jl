@@ -8,7 +8,7 @@ y=g.y
 u =getindex.(v,1)
 v =getindex.(v,2)
 x, y, u, v = vec.([x, y, u, v])
-quiver(x, y, quiver = (u, v), c = :blue)
+quiver(x, y; quiver = (u, v), kwargs...)
 end
 # function vis(x::EquivConv)
 #     r=LinRange(0.,x.rmax,64)

@@ -1,13 +1,25 @@
-include("conv.jl")
 using Functors
 using UnPack
 
-
-struct Grid
+function harmonics(r::AbstractArray{T},l) where T<:Complex
+@. θ=l*angle(r)
+    @. complex(cos(θ),sin(θ))
+end
+function harmonics(r::AbstractArray,l)
+    if l==1
+        return r
+    end
+    dims=length(r[1])
+    if dims==2
+@. r=complex(r[1],r[2])
+return harmonics(r)
+end
+end
+struct Grid{T}
     cell::AbstractMatrix
     origin::Any
-    r::AbstractArray
-    rhat::AbstractArray
+    r::AbstractArray{T}
+    Y::AbstractArray
     R::AbstractArray
     dv::AbstractFloat
 end
@@ -41,24 +53,17 @@ function Grid(
     cell::AbstractMatrix,
     sz::Union{AbstractVector,Tuple};
     origin = (sz .+ 1) ./ 2,
+    T=Array
 )
     n = size(cell, 1)
-    if n == 1
-        rvecs = [cell * ([x] .- origin) for x = 1:sz[1]]
-    elseif n == 2
-
-        rvecs = [cell * ([x, y] .- origin) for x = 1:sz[1], y = 1:sz[2]]
-    elseif n == 3
-
         rvecs = [
-            cell * ([x, y, z] .- origin)
-            for x = 1:sz[1], y = 1:sz[2], z = 1:sz[3]
+T(            (cell * collect(a .- origin)))
+            for a in Iterators.product([1:a for a in sz]...)
         ]
-    end
     R = norm.(rvecs)
-    rhat = rvecs ./ (R .+ 1e-16)
+    Y =[ rvecs ./ (R .+ 1e-16)]
     dv = det(cell)
-    Grid(cell, origin, rvecs, rhat, R, dv)
+    Grid(cell, origin, rvecs, Y, R, dv)
 end
 
 function Grid(cell, rmax::AbstractFloat)

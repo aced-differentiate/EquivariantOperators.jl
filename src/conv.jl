@@ -42,12 +42,23 @@ function tp(x, f, l, p)
         f[[a:b for (a, b) in zip(fl, fr)]...],
     ))
 end
+"""
+    xcor(x, f; product = *, stride = 1, pad = 0)
+
+Cross correlation, or "convolution" in computer vision.
+"""
 function xcor(x, f; product = *, stride = 1, pad = 0)
     l = Iterators.product([
         a:stride:b for (a, b) in zip(ones(Int,ndims(x)) .- pad, size(x) .- size(f) .+ 1 .+ pad)
     ]...)
     [tp(x, f, l, product) for l in l]
 end
+
+"""
+    conv(x, f; product = *, boundary = :extend)
+
+Convolution in signal processing. For "convolution" in computer vision, use xcor instead.
+"""
 function conv(x, f; product = *, boundary = :extend)
     if boundary == :smooth
         r = xcor(x, reverse(f); product)

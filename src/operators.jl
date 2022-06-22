@@ -21,16 +21,19 @@ end
 Flux.trainable(m::Op) = [m.radfunc]
 
 function makekernel(radfunc, rmin, rmax, l, grid)
-    @unpack cell, rhat,R, dv = grid
+    @unpack cell, Y,R, dv,r = grid
     n = size(cell, 1)
     f = r-> rmin <= r <= rmax ? radfunc(r) : 0.0
     rscalars = f.(R)
-    if l == 0
-        kernel = rscalars
-    elseif l == 1
-        kernel = rscalars.*rhat
+    if l==0
+        return rscalars*dv
     end
-    dv * kernel
+
+    while l>length(Y)
+        push!(Y,harmonics(r,length(Y)+1))
+    end
+
+        kernel = rscalars.*Y[l]*dv
 end
 function Op(
     radfunc,
