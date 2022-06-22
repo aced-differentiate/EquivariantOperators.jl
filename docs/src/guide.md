@@ -23,3 +23,10 @@ get(::AbstractArray, ::Grid, ::AbstractVector)
 ```@docs
 Op
 ```
+
+## Lower level utilities
+
+```@docs
+xcor
+conv
+```
